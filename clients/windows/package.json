@@ -1,0 +1,24 @@
+{
+  "name": "@jishi/windows",
+  "version": "0.2.0",
+  "description": "记时多用户待办 Windows 客户端",
+  "author": "Jishi",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "electron": "34.5.8",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "cn.jishi.todo",
+    "productName": "记时",
+    "directories": { "output": "dist" },
+    "files": ["main.cjs", "app-config.json"],
+    "win": { "target": "nsis" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "artifactName": "Jishi-Windows-Setup-${version}.${ext}" }
+  }
+}

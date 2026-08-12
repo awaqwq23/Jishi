@@ -1,41 +1,42 @@
-# 记时
+# 记时 · 多端项目
 
-一个面向 Web、Windows、Android、HarmonyOS 的多用户待办与提醒软件。四端复用同一套响应式界面和云端数据，支持 OAuth 登录、自动同步、筛选、滑动完成/删除、回收站、分类与提醒预设、主题和背景图片。
+项目已按“服务器端 / 用户端”完全拆分，每一端都可以独立安装依赖、修改和打包。
 
-## 本地运行
+```text
+每日记录/
+├─ server/             独立 API、数据库迁移、图片存储与 Linux 部署
+├─ clients/
+│  ├─ web/             Web / PWA 客户端
+│  ├─ windows/         Windows Electron 客户端
+│  ├─ android/         Android Capacitor 客户端
+│  └─ harmony/         HarmonyOS ArkTS 客户端
+├─ releases/           最终安装包和校验文件
+├─ docker-compose.yml  1GB Linux 一键部署
+└─ package.json        总控脚本
+```
 
-需要 Node.js 22.13 或更高版本。
+## 开发
 
 ```bash
 npm install
-npm run dev
+npm run dev:server
+npm run dev:web
 ```
 
-浏览器访问 `http://localhost:3000`。本地预览自动使用演示账号并写入项目内的本地 D1 状态。
+Web 客户端通过 `clients/web/.env.local` 的 `NEXT_PUBLIC_API_URL` 连接独立服务器。Windows、Android、HarmonyOS 客户端各自目录内都有服务地址配置和说明。
 
-## 校验
+## 打包产物
 
-```bash
-npm run lint
-npm test
-```
+- Web：部署压缩包（PWA 可从浏览器安装）
+- Windows：NSIS `.exe` 安装程序
+- Android：可直接安装的调试签名 `.apk`
+- HarmonyOS：`.hap`；必须由华为 DevEco/HarmonyOS SDK 编译和签名
+- Server：Linux Docker 部署压缩包
 
-## 四端
+最终文件统一放在 `releases/`，对应的 `SHA256SUMS.txt` 可用于检查下载完整性。
 
-- Web/PWA：项目根目录，可安装到桌面并使用系统通知。
-- Windows：`platforms/windows` Electron 工程。
-- Android：`platforms/android` Capacitor 工程。
-- HarmonyOS：`platforms/harmony` DevEco Studio Stage 工程。
+> Windows 安装程序目前未做商业代码签名；Android APK 使用标准调试证书签名。HarmonyOS 真机安装包必须使用开发者自己的华为证书，因此仓库不会保存签名凭据。
 
-各端在生产构建前需要将 `JISHI_SERVER_URL` 或 ArkTS 中的 `appUrl` 指向同一个 HTTPS 服务地址。
+## Linux 服务器
 
-## 部署
-
-默认站点发布使用 D1、R2 和平台 OAuth。若部署到 1GB Linux 服务器，使用根目录的 `docker-compose.yml`；详细步骤见 `deploy/selfhost/README.md`。
-
-## 数据与安全
-
-- 每条记录按 OAuth 用户 ID 隔离。
-- 删除采用软删除，回收站记录 30 天后自动清理。
-- 图片限制为 5MB 并存储在对象存储中。
-- 自托管模式仅通过 OAuth 网关暴露应用，禁止直接公开内部 3000 端口。
+参考 [server/deploy/selfhost/README.md](server/deploy/selfhost/README.md)。Web 与 API 是两个独立容器，合计内存限制约 704MB，适配 1GB Linux。

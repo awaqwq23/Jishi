@@ -1,13 +1,21 @@
 services:
-  app:
+  server:
     build:
-      context: .
+      context: ./server
       dockerfile: deploy/selfhost/Dockerfile
     restart: unless-stopped
     volumes:
       - jishi_data:/data
-    mem_limit: 520m
-    cpus: 1.0
+    mem_limit: 260m
+    cpus: 0.7
+  web:
+    build:
+      context: ./clients/web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ""
+    mem_limit: 300m
+    cpus: 0.7
   oauth2-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
     restart: unless-stopped
@@ -27,11 +35,10 @@ services:
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    ports: ["8080:8080"]
     volumes:
-      - ./deploy/selfhost/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on: [app, oauth2-proxy]
+      - ./server/deploy/selfhost/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [server, web, oauth2-proxy]
     mem_limit: 48m
 volumes:
   jishi_data:

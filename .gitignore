@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -37,5 +38,12 @@ yarn-error.log*
 
 /dist/
 /.wrangler/
+/.wrangler-legacy/
 /outputs/
 /work/
+/.toolchains/
+**/.data/
+**/.gradle/
+**/.cxx/
+*.jks
+*.keystore
