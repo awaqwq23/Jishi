@@ -2,7 +2,7 @@
 
 import {
   ArchiveRestore, Bell, Check, ChevronRight, CircleUserRound,
-  Clock3, Filter, ImagePlus, LayoutList, LogIn, Menu, MoreHorizontal,
+  Clock3, Filter, ImagePlus, LayoutList, Menu, MoreHorizontal,
   Palette, Pencil, Plus, RotateCcw, Search, Settings, SlidersHorizontal,
   Sparkles, Trash2, UserRound, X,
 } from "lucide-react";
@@ -158,6 +158,21 @@ function DetailPanel({ todo, category, preset, onClose, onEdit, onStatus, onDele
   </aside>;
 }
 
+function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [name, setName] = useState("");
+  const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setMessage("");
+    try {
+      await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify({ email, password, name }) });
+      await onAuthenticated();
+    } catch (err) { setMessage(err instanceof Error ? err.message : "登录失败，请稍后重试"); }
+    finally { setBusy(false); }
+  };
+  return <main className="signin-screen"><div className="brand-mark">记</div><span className="eyebrow">欢迎来到记时</span><h1>把今天，安放得刚刚好。</h1><p>使用邮箱创建自己的空间，待办、提醒与个人设置会在各端保持一致。</p><form className="auth-form" onSubmit={(event) => void submit(event)}>{mode === "register" && <label><span>昵称</span><input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" maxLength={24} required placeholder="怎么称呼你" /></label>}<label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required placeholder="name@example.com" /></label><label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required placeholder="至少 8 位" /></label>{message && <div className="auth-error">{message}</div>}<button className="button primary" disabled={busy}>{busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}</button></form><button className="auth-switch" onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setMessage(""); }}>{mode === "login" ? "还没有账号？创建一个" : "已有账号？直接登录"}</button></main>;
+}
+
 export default function TodoApp() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [section, setSection] = useState<"todos" | "mine" | "settings" | "trash">("todos");
@@ -245,7 +260,7 @@ export default function TodoApp() {
     else await saveProfile({ settings: { ...settings, backgroundUrl: result.url } });
   };
 
-  if (error.includes("登录")) { const base = process.env.NEXT_PUBLIC_API_URL || ""; return <main className="signin-screen"><div className="brand-mark">记</div><span className="eyebrow">欢迎来到记时</span><h1>把今天，安放得刚刚好。</h1><p>登录后，你的待办、提醒与个人设置会在四端保持一致。</p><a className="button primary" href={`${base}/oauth2/start?rd=${encodeURIComponent(window.location.href)}`}><LogIn size={18} />使用 OAuth 登录</a></main>; }
+  if (!data && error.includes("登录")) return <AuthScreen onAuthenticated={load} />;
   if (!data) return <main className="loading-screen"><div className="brand-mark pulse">记</div><p>{error || "正在整理你的今天…"}</p>{error && <button className="button secondary" onClick={() => void load()}>重新连接</button>}</main>;
 
   const categoryMap = new Map(data.categories.map((item) => [item.id, item]));
@@ -286,7 +301,7 @@ function ProfileSettings({ data, settings, section, onSection, onSaveProfile, on
   const [name, setName] = useState(data.user.name); const [categoryName, setCategoryName] = useState(""); const [presetName, setPresetName] = useState(""); const [offset, setOffset] = useState("60");
   const addCategory = async () => { const result = await api<{ category: Category }>("/api/categories", { method: "POST", body: JSON.stringify({ name: categoryName }) }); setData((old) => old ? ({ ...old, categories: [...old.categories, result.category] }) : old); setCategoryName(""); flash("分类已添加"); };
   const addPreset = async () => { const result = await api<{ preset: Preset }>("/api/presets", { method: "POST", body: JSON.stringify({ name: presetName, offsets: offset.split(/[,，]/).map(Number) }) }); setData((old) => old ? ({ ...old, reminderPresets: [...old.reminderPresets, result.preset] }) : old); setPresetName(""); flash("提醒组已添加"); };
-  if (section === "mine") return <div className="profile-page"><header className="topbar"><div><span className="eyebrow">个人中心</span><h1>我的</h1></div></header><section className="profile-hero"><label className="avatar large" aria-label="更换头像">{data.user.avatarUrl ? <Image src={`${process.env.NEXT_PUBLIC_API_URL || ""}${data.user.avatarUrl}`} alt="用户头像" fill sizes="80px" unoptimized /> : data.user.name.slice(0, 1)}<input aria-label="选择头像图片" type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && void onUpload(event.target.files[0], "avatar")} /><span><ImagePlus size={15} /></span></label><div><h2>{data.user.name}</h2><p>{data.user.email}</p><span className="sync-badge"><Check size={14} />云端同步正常</span></div></section><section className="quick-grid"><button onClick={() => onSection("settings")}><span><Palette size={20} /></span><div><strong>外观与设置</strong><small>主题、卡片与提醒</small></div><ChevronRight size={18} /></button><button onClick={() => onSection("trash")}><span><ArchiveRestore size={20} /></span><div><strong>回收站</strong><small>{data.todos.filter((todo) => todo.status === "deleted").length} 个待办</small></div><ChevronRight size={18} /></button></section><section className="insight-card"><span className="eyebrow">本周小结</span><div><strong>{data.todos.filter((todo) => todo.status === "completed").length}</strong><p>件事情已经妥善完成。保持自己的节奏，就很好。</p></div></section><a className="button secondary signout" href={`${process.env.NEXT_PUBLIC_API_URL || ""}/oauth2/sign_out`}>退出当前账号</a></div>;
+  if (section === "mine") return <div className="profile-page"><header className="topbar"><div><span className="eyebrow">个人中心</span><h1>我的</h1></div></header><section className="profile-hero"><label className="avatar large" aria-label="更换头像">{data.user.avatarUrl ? <Image src={`${process.env.NEXT_PUBLIC_API_URL || ""}${data.user.avatarUrl}`} alt="用户头像" fill sizes="80px" unoptimized /> : data.user.name.slice(0, 1)}<input aria-label="选择头像图片" type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && void onUpload(event.target.files[0], "avatar")} /><span><ImagePlus size={15} /></span></label><div><h2>{data.user.name}</h2><p>{data.user.email}</p><span className="sync-badge"><Check size={14} />云端同步正常</span></div></section><section className="quick-grid"><button onClick={() => onSection("settings")}><span><Palette size={20} /></span><div><strong>外观与设置</strong><small>主题、卡片与提醒</small></div><ChevronRight size={18} /></button><button onClick={() => onSection("trash")}><span><ArchiveRestore size={20} /></span><div><strong>回收站</strong><small>{data.todos.filter((todo) => todo.status === "deleted").length} 个待办</small></div><ChevronRight size={18} /></button></section><section className="insight-card"><span className="eyebrow">本周小结</span><div><strong>{data.todos.filter((todo) => todo.status === "completed").length}</strong><p>件事情已经妥善完成。保持自己的节奏，就很好。</p></div></section><button className="button secondary signout" onClick={async () => { await api("/api/auth/logout", { method: "POST" }); window.location.reload(); }}>退出当前账号</button></div>;
   return <div className="settings-page"><header className="topbar"><div><span className="eyebrow">只属于你的记时</span><h1>设置</h1></div></header>
     <section className="settings-card"><div className="settings-title"><UserRound size={20} /><div><h2>个人资料</h2><p>修改后会同步到所有设备</p></div></div><div className="inline-form"><input value={name} maxLength={24} onChange={(event) => setName(event.target.value)} /><button className="button primary" onClick={() => void onSaveProfile({ name })}>保存姓名</button></div></section>
     <section className="settings-card"><div className="settings-title"><Palette size={20} /><div><h2>主题与背景</h2><p>选择一套让你舒服的界面</p></div></div><div className="theme-options">{(["linen", "sage", "night"] as const).map((theme) => <button key={theme} className={`${theme} ${settings.theme === theme ? "selected" : ""}`} onClick={() => void onSaveProfile({ settings: { ...settings, theme } })}><span /><b>{theme === "linen" ? "暖白" : theme === "sage" ? "青苔" : "夜墨"}</b></button>)}</div><div className="setting-line"><div><strong>主题色</strong><small>按钮与强调内容</small></div><input aria-label="选择主题色" type="color" value={settings.accent} onChange={(event) => void onSaveProfile({ settings: { ...settings, accent: event.target.value } })} /></div><div className="setting-line"><div><strong>亚克力效果</strong><small>为卡片添加轻柔的背景模糊</small></div><button role="switch" aria-checked={settings.acrylic} className={`switch ${settings.acrylic ? "on" : ""}`} onClick={() => void onSaveProfile({ settings: { ...settings, acrylic: !settings.acrylic } })}><span /></button></div><label className="range-line" aria-label="卡片透明度"><span><strong>卡片透明度</strong><small>{settings.cardOpacity}%</small></span><input aria-label="卡片透明度" type="range" min="55" max="100" value={settings.cardOpacity} onChange={(event) => void onSaveProfile({ settings: { ...settings, cardOpacity: Number(event.target.value) } })} /></label><label className="upload-button" aria-label="选择背景图片"><ImagePlus size={18} />选择背景图片<input aria-label="选择背景图片" type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && void onUpload(event.target.files[0], "background")} /></label></section>

@@ -1,1 +1,0 @@
-This folder contains the built output assets for the worker "jishi-api" generated at 2026-08-12T10:41:08.756Z.

@@ -17,6 +17,8 @@
 # next.js
 /.next/
 /.vinext/
+**/.next/
+**/.vinext/
 /out/
 
 # misc
@@ -37,7 +39,9 @@ yarn-error.log*
 .vercel
 
 /dist/
+**/dist/
 /.wrangler/
+**/.wrangler/
 /.wrangler-legacy/
 /outputs/
 /work/
@@ -47,3 +51,5 @@ yarn-error.log*
 **/.cxx/
 *.jks
 *.keystore
+.dev.vars
+.dev.vars.*

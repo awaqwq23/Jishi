@@ -25,6 +25,8 @@ npm run dev:web
 
 Web 客户端通过 `clients/web/.env.local` 的 `NEXT_PUBLIC_API_URL` 连接独立服务器。Windows、Android、HarmonyOS 客户端各自目录内都有服务地址配置和说明。
 
+多用户登录采用邮箱和密码，密码只以 PBKDF2-SHA256 加盐哈希保存，会话 Cookie 为 HttpOnly。生产部署必须配置 HTTPS 和随机 `AUTH_SECRET`。
+
 ## 打包产物
 
 - Web：部署压缩包（PWA 可从浏览器安装）
@@ -39,4 +41,4 @@ Web 客户端通过 `clients/web/.env.local` 的 `NEXT_PUBLIC_API_URL` 连接独
 
 ## Linux 服务器
 
-参考 [server/deploy/selfhost/README.md](server/deploy/selfhost/README.md)。Web 与 API 是两个独立容器，合计内存限制约 704MB，适配 1GB Linux。
+Docker 方案参考 [server/deploy/selfhost/README.md](server/deploy/selfhost/README.md)。1GB Linux 推荐使用 `server/deploy/native/` 中的原生 systemd + Nginx 配置，减少容器常驻开销。

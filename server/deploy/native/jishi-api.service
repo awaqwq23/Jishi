@@ -1,0 +1,25 @@
+[Unit]
+Description=Jishi API service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=awaqwq233
+Group=awaqwq233
+WorkingDirectory=/opt/jishi/server
+Environment=NODE_OPTIONS=--max-old-space-size=192
+Environment=HOME=/var/lib/jishi
+ExecStartPre=/opt/jishi/server/node_modules/.bin/wrangler d1 migrations apply DB --local --persist-to /var/lib/jishi
+ExecStart=/opt/jishi/server/node_modules/.bin/wrangler dev --local --ip 127.0.0.1 --port 8787 --persist-to /var/lib/jishi
+Restart=on-failure
+RestartSec=4
+MemoryMax=300M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/jishi /opt/jishi/server/.wrangler
+
+[Install]
+WantedBy=multi-user.target

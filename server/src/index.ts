@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ALLOWED_ORIGINS?: string;
+  AUTH_SECRET?: string;
 }
 
 type User = { id: string; email: string; name: string };
@@ -9,6 +10,7 @@ type Json = Record<string, unknown>;
 
 const schema = [
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, avatar_url TEXT, settings_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS auth_credentials (user_id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS reminder_presets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, offsets_json TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS todos (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', deadline TEXT, reminder_preset_id TEXT, reminder_offsets_json TEXT NOT NULL DEFAULT '[]', category_id TEXT, priority TEXT NOT NULL DEFAULT 'normal', notes TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, completed_at TEXT, deleted_at TEXT, updated_at TEXT NOT NULL)`,
@@ -36,8 +38,68 @@ function response(request: Request, env: Env, value: unknown, status = 200) {
   return Response.json(value, { status, headers: { ...corsHeaders(request, env), "Cache-Control": "no-store" } });
 }
 
-function userFrom(request: Request): User | null {
-  const url = new URL(request.url);
+const SESSION_COOKIE = "jishi_session";
+const SESSION_SECONDS = 30 * 24 * 60 * 60;
+
+function bytesToBase64Url(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function hex(bytes: Uint8Array) { return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""); }
+
+async function passwordHash(password: string, salt: Uint8Array) {
+  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const saltBuffer = Uint8Array.from(salt).buffer;
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: saltBuffer, iterations: 210_000 }, material, 256);
+  return hex(new Uint8Array(bits));
+}
+
+async function authKey(env: Env) {
+  if (!env.AUTH_SECRET || env.AUTH_SECRET.length < 32) throw new Error("AUTH_SECRET 必须至少为 32 个字符");
+  return crypto.subtle.importKey("raw", new TextEncoder().encode(env.AUTH_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+
+async function createSession(env: Env, user: User) {
+  const payload = bytesToBase64Url(new TextEncoder().encode(JSON.stringify({ ...user, exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS })));
+  const signature = await crypto.subtle.sign("HMAC", await authKey(env), new TextEncoder().encode(payload));
+  return `${payload}.${bytesToBase64Url(new Uint8Array(signature))}`;
+}
+
+async function sessionUser(request: Request, env: Env): Promise<User | null> {
+  const cookie = request.headers.get("cookie") || "";
+  const token = cookie.split(/;\s*/).find((item) => item.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1);
+  if (!token) return null;
+  const [payload, signature, extra] = token.split(".");
+  if (!payload || !signature || extra) return null;
+  try {
+    const valid = await crypto.subtle.verify("HMAC", await authKey(env), base64UrlToBytes(signature), new TextEncoder().encode(payload));
+    if (!valid) return null;
+    const value = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload))) as User & { exp: number };
+    if (!value.id || !value.email || value.exp < Math.floor(Date.now() / 1000)) return null;
+    return { id: value.id, email: value.email, name: value.name || value.email.split("@")[0] };
+  } catch { return null; }
+}
+
+function sessionCookie(request: Request, token: string, maxAge = SESSION_SECONDS) {
+  const secure = (request.headers.get("x-forwarded-proto") || new URL(request.url).protocol.replace(":", "")) === "https";
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${maxAge === 0 ? "; Expires=Thu, 01 Jan 1970 00:00:00 GMT" : ""}${secure ? "; Secure" : ""}`;
+}
+
+function authResponse(request: Request, env: Env, value: unknown, cookie: string, status = 200) {
+  return Response.json(value, { status, headers: { ...corsHeaders(request, env), "Cache-Control": "no-store", "Set-Cookie": cookie } });
+}
+
+async function userFrom(request: Request, env: Env): Promise<User | null> {
+  const session = await sessionUser(request, env);
+  if (session) return session;
   const email = request.headers.get("oai-authenticated-user-email") || request.headers.get("x-auth-request-email");
   const id = request.headers.get("oai-authenticated-user-id") || email;
   const encodedName = request.headers.get("oai-authenticated-user-full-name");
@@ -45,8 +107,37 @@ function userFrom(request: Request): User | null {
   let name = gatewayName || email || "";
   if (!gatewayName && encodedName) { try { name = decodeURIComponent(encodedName); } catch { name = email || ""; } }
   if (id && email) return { id, email, name };
-  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return { id: "local-demo", email: "demo@jishi.local", name: "夏日" };
   return null;
+}
+
+async function register(request: Request, env: Env) {
+  await ensureDb(env);
+  const body = await request.json<Json>();
+  const email = String(body.email || "").trim().toLowerCase();
+  const password = String(body.password || "");
+  const name = String(body.name || email.split("@")[0]).trim().slice(0, 24);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160) return response(request, env, { error: "请输入有效邮箱地址" }, 400);
+  if (password.length < 8 || password.length > 128) return response(request, env, { error: "密码长度应为 8 至 128 位" }, 400);
+  if (!name) return response(request, env, { error: "请输入昵称" }, 400);
+  const exists = await env.DB.prepare("SELECT user_id FROM auth_credentials WHERE email=?").bind(email).first();
+  if (exists) return response(request, env, { error: "该邮箱已经注册" }, 409);
+  const id = crypto.randomUUID(); const now = new Date().toISOString(); const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await passwordHash(password, salt);
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO users (id,email,name,created_at,updated_at) VALUES (?,?,?,?,?)").bind(id, email, name, now, now),
+    env.DB.prepare("INSERT INTO auth_credentials (user_id,email,password_hash,password_salt,created_at) VALUES (?,?,?,?,?)").bind(id, email, hash, hex(salt), now),
+  ]);
+  const user = { id, email, name }; const token = await createSession(env, user);
+  return authResponse(request, env, { user }, sessionCookie(request, token), 201);
+}
+
+async function login(request: Request, env: Env) {
+  await ensureDb(env);
+  const body = await request.json<Json>(); const email = String(body.email || "").trim().toLowerCase(); const password = String(body.password || "");
+  const account = await env.DB.prepare("SELECT a.user_id,a.password_hash,a.password_salt,u.name FROM auth_credentials a JOIN users u ON u.id=a.user_id WHERE a.email=?").bind(email).first<{ user_id: string; password_hash: string; password_salt: string; name: string }>();
+  if (!account || (await passwordHash(password, Uint8Array.from(account.password_salt.match(/.{2}/g) || [], (part) => parseInt(part, 16)))) !== account.password_hash) return response(request, env, { error: "邮箱或密码不正确" }, 401);
+  const user = { id: account.user_id, email, name: account.name }; const token = await createSession(env, user);
+  return authResponse(request, env, { user }, sessionCookie(request, token));
 }
 
 async function ensureDb(env: Env) {
@@ -150,8 +241,11 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, env) });
     const url = new URL(request.url); if (url.pathname === "/health") return response(request, env, { status: "ok", service: "jishi-api" });
-    const user = userFrom(request); if (!user) return response(request, env, { error: "请先登录后再继续" }, 401);
     try {
+      if (url.pathname === "/api/auth/register" && request.method === "POST") return register(request, env);
+      if (url.pathname === "/api/auth/login" && request.method === "POST") return login(request, env);
+      if (url.pathname === "/api/auth/logout" && request.method === "POST") return authResponse(request, env, { ok: true }, sessionCookie(request, "", 0));
+      const user = await userFrom(request, env); if (!user) return response(request, env, { error: "请先登录后再继续" }, 401);
       if (url.pathname === "/api/bootstrap" && request.method === "GET") return bootstrap(request, env, user);
       if (url.pathname === "/api/todos" && request.method === "POST") return createTodo(request, env, user);
       const todoMatch = url.pathname.match(/^\/api\/todos\/([^/]+)$/); if (todoMatch && request.method === "PATCH") return updateTodo(request, env, user, todoMatch[1]);
