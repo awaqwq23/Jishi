@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jishi-selfhost",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "dist/client", "binding": "ASSETS" },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "jishi",
+    "database_id": "00000000-0000-4000-8000-000000000000",
+    "migrations_dir": "drizzle"
+  }],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "jishi-media" }]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "记时 · 待办与提醒",
+  "short_name": "记时",
+  "description": "跨设备同步的待办事项与提醒工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f0e8",
+  "theme_color": "#d96f4b",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
