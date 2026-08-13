@@ -233,7 +233,17 @@ async function profile(request: Request, env: Env, user: User) {
 
 async function media(request: Request, env: Env, user: User) {
   const kind = new URL(request.url).searchParams.get("kind") === "avatar" ? "avatar" : "background"; const key = `users/${user.id}/${kind}`;
-  if (request.method === "PUT") { const type = request.headers.get("content-type") || "image/jpeg"; if (!type.startsWith("image/")) return response(request, env, { error: "只支持图片" }, 400); const bytes = await request.arrayBuffer(); if (bytes.byteLength > 5 * 1024 * 1024) return response(request, env, { error: "图片不能超过 5MB" }, 413); await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: type } }); return response(request, env, { url: `/api/media?kind=${kind}&v=${Date.now()}` }); }
+  if (request.method === "DELETE") { await env.MEDIA.delete(key); return response(request, env, { ok: true }); }
+  if (request.method === "PUT") {
+    const type = (request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+    if (!allowedTypes.has(type)) return response(request, env, { error: "只支持 JPEG、PNG、WebP 或 GIF 图片" }, 400);
+    const bytes = await request.arrayBuffer();
+    if (!bytes.byteLength) return response(request, env, { error: "图片内容为空" }, 400);
+    if (bytes.byteLength > 5 * 1024 * 1024) return response(request, env, { error: "图片不能超过 5MB" }, 413);
+    await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: type } });
+    return response(request, env, { url: `/api/media?kind=${kind}&v=${Date.now()}` });
+  }
   const object = await env.MEDIA.get(key); if (!object) return new Response(null, { status: 404, headers: corsHeaders(request, env) }); return new Response(object.body, { headers: { ...corsHeaders(request, env), "Content-Type": object.httpMetadata?.contentType || "image/jpeg", "Cache-Control": "private,max-age=3600" } });
 }
 
@@ -253,7 +263,7 @@ export default {
       if (url.pathname === "/api/categories" && (request.method === "POST" || request.method === "DELETE")) return categories(request, env, user);
       if (url.pathname === "/api/presets" && request.method === "POST") return createPreset(request, env, user);
       if (url.pathname === "/api/profile" && request.method === "PATCH") return profile(request, env, user);
-      if (url.pathname === "/api/media" && (request.method === "GET" || request.method === "PUT")) return media(request, env, user);
+      if (url.pathname === "/api/media" && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) return media(request, env, user);
       return response(request, env, { error: "接口不存在" }, 404);
     } catch (error) { return response(request, env, { error: error instanceof Error ? error.message : "服务器暂时不可用" }, 500); }
   },

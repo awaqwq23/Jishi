@@ -1,26 +1,25 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-0ecee177fefdb609",
-  "webBuild": "0ecee177fefdb609e4d2dbe32a2d41677146c2473f8139e8ff554db00f266318",
-  "publishedAt": "2026-08-13T13:19:35.983Z",
+  "releaseId": "web-c23815ebbc8d95c9",
+  "webBuild": "c23815ebbc8d95c9c79dd9d0accd7a1b636dcc6b854b51e02a9d20a6a033296b",
+  "publishedAt": "2026-08-13T14:18:02.800Z",
   "notes": [
-    "新增 Windows/Android 自动更新提醒",
-    "Web 源码更新后自动提示刷新",
-    "安装包由 Linux 主机通过 HTTPS 下载"
+    "新增三端自定义背景图片，支持预览、更换、移除与跨端同步。",
+    "客户端正式切换至 awaqwq233.com，同时保留旧域名更新兼容。"
   ],
   "clients": {
     "windows": {
-      "version": "0.4.0",
-      "downloadUrl": "https://jishi-104-214-169-232.nip.io/downloads/Jishi-Windows-Setup-0.4.0.exe",
-      "sha256": "ECA999751BAA96015A4374BF3BA65627E7DD3F1C4B95BAA5F744941D5E556247",
-      "size": 99625307,
+      "version": "0.4.1",
+      "downloadUrl": "https://awaqwq233.com/downloads/Jishi-Windows-Setup-0.4.1.exe",
+      "sha256": "9F8DCBE4BB912DE5AFFBDD8EF114633472B95968305C4FF128EFE7AB6AC7434B",
+      "size": 99625322,
       "required": false
     },
     "android": {
-      "version": "0.4.0",
-      "downloadUrl": "https://jishi-104-214-169-232.nip.io/downloads/Jishi-Android-0.4.0.apk",
-      "sha256": "36A694C1B6CD0871B0DB1DDDB70629339159F9E7A3AD442FA36D83AB8BD9C68C",
-      "size": 4052441,
+      "version": "0.4.1",
+      "downloadUrl": "https://awaqwq233.com/downloads/Jishi-Android-0.4.1.apk",
+      "sha256": "940A4BA80C43BA5AD41C6F424D37D2F7F60D91EFD9B2D45F121D814DF23A2B7C",
+      "size": 4052433,
       "required": false
     }
   }

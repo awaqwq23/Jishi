@@ -4,7 +4,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const publicUrl = (process.env.JISHI_PUBLIC_URL || "https://jishi-104-214-169-232.nip.io").replace(/\/$/, "");
+const publicUrl = (process.env.JISHI_PUBLIC_URL || "https://awaqwq233.com").replace(/\/$/, "");
 const required = process.env.JISHI_UPDATE_REQUIRED === "true";
 const notesArgument = process.argv.find((argument) => argument.startsWith("--notes="))?.slice(8);
 const notes = (notesArgument || process.env.JISHI_RELEASE_NOTES || "修复问题并改进使用体验。")
