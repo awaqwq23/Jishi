@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import TodoApp from "./TodoApp";
+import UpdatePrompt from "./UpdatePrompt";
 
 export const metadata: Metadata = {
   title: "记时 · 待办",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <TodoApp />;
+  return <><TodoApp /><UpdatePrompt /></>;
 }

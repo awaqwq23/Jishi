@@ -11,6 +11,8 @@
     "build:windows": "npm run build --workspace @jishi/windows",
     "build:android": "npm run build --workspace @jishi/android",
     "build:harmony": "powershell -ExecutionPolicy Bypass -File clients/harmony/build-hap.ps1",
-    "check": "npm run check --workspace @jishi/server && npm run lint --workspace @jishi/web && npm test --workspace @jishi/web"
+    "release:manifest": "node scripts/generate-update-manifest.mjs",
+    "check:updates": "node scripts/test-update-contract.mjs",
+    "check": "npm run check --workspace @jishi/server && npm run lint --workspace @jishi/web && npm test --workspace @jishi/web && npm run check:updates"
   }
 }
