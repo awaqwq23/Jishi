@@ -2,6 +2,7 @@
 
 import { Download, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { withRuntimeBase } from "./runtime-path";
 
 type NativePlatform = "windows" | "android";
 type ClientRelease = {
@@ -26,7 +27,6 @@ type PromptState = {
   release?: ClientRelease;
 };
 
-const MANIFEST_URL = "/updates/latest.json";
 const CHECK_INTERVAL = 5 * 60_000;
 const SNOOZE_TIME = 12 * 60 * 60_000;
 
@@ -73,7 +73,7 @@ export default function UpdatePrompt() {
     const identity = detectClient();
     if (!identity) return;
     try {
-      const response = await fetch(`${MANIFEST_URL}?time=${Date.now()}`, { cache: "no-store" });
+      const response = await fetch(`${withRuntimeBase("/updates/latest.json")}?time=${Date.now()}`, { cache: "no-store" });
       if (!response.ok) return;
       const manifest = await response.json() as UpdateManifest;
       if (manifest.schemaVersion !== 1 || !manifest.releaseId || !manifest.clients) return;

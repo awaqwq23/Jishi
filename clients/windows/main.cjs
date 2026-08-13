@@ -5,6 +5,7 @@ const config = require(path.join(__dirname, "app-config.json"));
 const { resolveAppUrl, uniqueUrls } = require(path.join(__dirname, "host-resolver.cjs"));
 
 const APP_URLS = uniqueUrls([process.env.JISHI_WEB_URL, config.webUrl, ...(config.fallbackUrls || [])]);
+const APP_ORIGINS = [...new Set(APP_URLS.map((url) => new URL(url).origin))];
 const SMOKE_TEST = process.argv.includes("--jishi-smoke-test");
 let downloadHandlerInstalled = false;
 
@@ -26,7 +27,7 @@ function createWindow(appUrl) {
   }
   void window.loadURL(appUrl);
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (APP_URLS.includes(new URL(url).origin)) return { action: "allow" };
+    if (APP_ORIGINS.includes(new URL(url).origin)) return { action: "allow" };
     void shell.openExternal(url); return { action: "deny" };
   });
 }

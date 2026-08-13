@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-c23815ebbc8d95c9",
-  "webBuild": "c23815ebbc8d95c9c79dd9d0accd7a1b636dcc6b854b51e02a9d20a6a033296b",
-  "publishedAt": "2026-08-13T15:36:08.713Z",
+  "releaseId": "web-049b1bbab2b721e0",
+  "webBuild": "049b1bbab2b721e0627a82b8ab94929ca218b502bc5c5b334010d384b2071ef0",
+  "publishedAt": "2026-08-13T15:48:57.417Z",
   "notes": [
-    "修复 Windows 客户端因正式域名尚未切换而出现的白屏。",
-    "Windows 启动时验证记时服务并自动回退到可用生产地址。",
-    "Android 暂时使用已上线的生产地址。"
+    "Web、Windows 和 Android 正式使用 awaqwq233.com/note/。",
+    "保留原有 heartbeat 页面并隔离 Service Worker 作用域。",
+    "包含自定义背景图片和 Windows 白屏自动回退修复。"
   ],
   "clients": {
     "windows": {
-      "version": "0.4.2",
-      "downloadUrl": "https://jishi-104-214-169-232.nip.io/downloads/Jishi-Windows-Setup-0.4.2.exe",
-      "sha256": "7091CF11F425C42442046C387EE97A393EF33E72FDFC9398D3379E6975093DC7",
-      "size": 99626265,
+      "version": "0.4.3",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.3.exe",
+      "sha256": "5AF4CC9B745247FECA37E8E8E31E4532CA858B0004A6640BB3839B565BF11AF8",
+      "size": 99626342,
       "required": false
     },
     "android": {
-      "version": "0.4.2",
-      "downloadUrl": "https://jishi-104-214-169-232.nip.io/downloads/Jishi-Android-0.4.2.apk",
-      "sha256": "685CCF2ECE0969CF12A98A1D9684409192002C2EDEAA1449A4635D2243F3B35D",
-      "size": 4052429,
+      "version": "0.4.3",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.3.apk",
+      "sha256": "7DBF0786B6833D58792BE53E19093C4EA9FE1299ADE560029E728AC200431042",
+      "size": 4052422,
       "required": false
     }
   }

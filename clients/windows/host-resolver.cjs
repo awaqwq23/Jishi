@@ -1,12 +1,17 @@
 function uniqueUrls(values) {
-  return [...new Set(values.filter(Boolean).map((value) => new URL(value).origin))];
+  return [...new Set(values.filter(Boolean).map((value) => {
+    const url = new URL(value);
+    url.search = ""; url.hash = "";
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/`;
+    return url.toString();
+  }))];
 }
 
 async function isJishiHost(baseUrl, fetchImpl, timeoutMs = 5000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(new URL("/health", baseUrl), {
+    const response = await fetchImpl(new URL("health", baseUrl), {
       cache: "no-store",
       signal: controller.signal,
     });
