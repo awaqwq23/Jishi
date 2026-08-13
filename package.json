@@ -13,6 +13,6 @@
     "build:harmony": "powershell -ExecutionPolicy Bypass -File clients/harmony/build-hap.ps1",
     "release:manifest": "node scripts/generate-update-manifest.mjs",
     "check:updates": "node scripts/test-update-contract.mjs",
-    "check": "npm run check --workspace @jishi/server && npm run lint --workspace @jishi/web && npm test --workspace @jishi/web && npm run check:updates"
+    "check": "npm run check --workspace @jishi/server && npm run lint --workspace @jishi/web && npm test --workspace @jishi/web && npm test --workspace @jishi/windows && npm run check:updates"
   }
 }

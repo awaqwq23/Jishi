@@ -1,13 +1,14 @@
 {
   "name": "@jishi/windows",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "记时多用户待办 Windows 客户端",
   "author": "Jishi",
   "private": true,
   "main": "main.cjs",
   "scripts": {
     "dev": "electron .",
-    "build": "electron-builder --win nsis --publish never"
+    "build": "electron-builder --win nsis --publish never",
+    "test": "node --test host-resolver.test.cjs"
   },
   "devDependencies": {
     "electron": "43.4.0",
@@ -21,6 +22,7 @@
     },
     "files": [
       "main.cjs",
+      "host-resolver.cjs",
       "app-config.json"
     ],
     "win": {

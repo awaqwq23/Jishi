@@ -2,24 +2,25 @@
   "schemaVersion": 1,
   "releaseId": "web-c23815ebbc8d95c9",
   "webBuild": "c23815ebbc8d95c9c79dd9d0accd7a1b636dcc6b854b51e02a9d20a6a033296b",
-  "publishedAt": "2026-08-13T14:18:02.800Z",
+  "publishedAt": "2026-08-13T15:36:08.713Z",
   "notes": [
-    "新增三端自定义背景图片，支持预览、更换、移除与跨端同步。",
-    "客户端正式切换至 awaqwq233.com，同时保留旧域名更新兼容。"
+    "修复 Windows 客户端因正式域名尚未切换而出现的白屏。",
+    "Windows 启动时验证记时服务并自动回退到可用生产地址。",
+    "Android 暂时使用已上线的生产地址。"
   ],
   "clients": {
     "windows": {
-      "version": "0.4.1",
-      "downloadUrl": "https://awaqwq233.com/downloads/Jishi-Windows-Setup-0.4.1.exe",
-      "sha256": "9F8DCBE4BB912DE5AFFBDD8EF114633472B95968305C4FF128EFE7AB6AC7434B",
-      "size": 99625322,
+      "version": "0.4.2",
+      "downloadUrl": "https://jishi-104-214-169-232.nip.io/downloads/Jishi-Windows-Setup-0.4.2.exe",
+      "sha256": "7091CF11F425C42442046C387EE97A393EF33E72FDFC9398D3379E6975093DC7",
+      "size": 99626265,
       "required": false
     },
     "android": {
-      "version": "0.4.1",
-      "downloadUrl": "https://awaqwq233.com/downloads/Jishi-Android-0.4.1.apk",
-      "sha256": "940A4BA80C43BA5AD41C6F424D37D2F7F60D91EFD9B2D45F121D814DF23A2B7C",
-      "size": 4052433,
+      "version": "0.4.2",
+      "downloadUrl": "https://jishi-104-214-169-232.nip.io/downloads/Jishi-Android-0.4.2.apk",
+      "sha256": "685CCF2ECE0969CF12A98A1D9684409192002C2EDEAA1449A4635D2243F3B35D",
+      "size": 4052429,
       "required": false
     }
   }
