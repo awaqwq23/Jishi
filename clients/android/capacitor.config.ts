@@ -5,8 +5,8 @@ const config: CapacitorConfig = {
   appName: "记时",
   webDir: "www",
   server: {
-    url: process.env.JISHI_WEB_URL || "http://104.214.169.232",
-    cleartext: process.env.NODE_ENV !== "production",
+    url: process.env.JISHI_WEB_URL || "https://jishi-104-214-169-232.nip.io",
+    cleartext: false,
   },
   android: { allowMixedContent: false, backgroundColor: "#f4f0e8" },
 };
