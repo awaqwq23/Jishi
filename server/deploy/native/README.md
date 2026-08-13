@@ -37,8 +37,8 @@
 ## 验证
 
 ```bash
-curl -fsS https://awaqwq233.com/updates/latest.json
-curl -I https://awaqwq233.com/downloads/Jishi-Windows-Setup-<version>.exe
+curl -fsS https://awaqwq233.com/note/updates/latest.json
+curl -I https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-<version>.exe
 systemctl is-active jishi-api jishi-web nginx
 ```
 
