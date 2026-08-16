@@ -8,6 +8,13 @@
       "when": 1786526778632,
       "tag": "0000_chief_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786900000000,
+      "tag": "0001_modules_and_portability",
+      "breakpoints": true
     }
   ]
 }

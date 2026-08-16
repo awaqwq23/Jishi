@@ -54,10 +54,11 @@ test("includes product metadata and installable shell", async () => {
 });
 
 test("keeps the reported interaction regressions covered", async () => {
-  const [app, css, server, androidConfig, offlinePage] = await Promise.all([
+  const [app, css, server, migration, androidConfig, offlinePage] = await Promise.all([
     readFile(new URL("../app/TodoApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../../../server/src/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../../server/drizzle/0001_modules_and_portability.sql", import.meta.url), "utf8"),
     readFile(new URL("../../android/capacitor.config.ts", import.meta.url), "utf8"),
     readFile(new URL("../../android/www/offline.html", import.meta.url), "utf8"),
   ]);
@@ -69,7 +70,20 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(app, /PATCH.*api\/categories/s);
   assert.match(app, /PATCH.*api\/presets/s);
   assert.match(css, /task-card::before[^}]*width:\s*7px/s);
+  assert.match(css, /background-color:\s*rgb\(var\(--card\)\s*\/\s*var\(--card-opacity\)\)/);
+  assert.match(css, /app-shell\.has-custom-background/);
   assert.match(server, /request\.method === "PATCH"/);
+  assert.match(app, /function ReminderOffsetsEditor/);
+  assert.match(app, /option value="hours">小时/);
+  assert.match(app, /option value="minutes">分钟/);
+  assert.match(app, /option value="seconds">秒/);
+  assert.match(app, /function ScheduleBoard/);
+  assert.match(app, /function DiaryBoard/);
+  assert.match(app, /\/api\/data\/export/);
+  assert.match(server, /CREATE TABLE IF NOT EXISTS schedule_items/);
+  assert.match(server, /CREATE TABLE IF NOT EXISTS diary_entries/);
+  assert.match(server, /\/api\/data\/import/);
+  assert.match(migration, /CREATE TABLE `schedule_records`/);
   assert.match(androidConfig, /errorPath:\s*"offline\.html"/);
   assert.match(offlinePage, /重新连接主服务器/);
 });

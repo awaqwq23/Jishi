@@ -1,14 +1,12 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-87510eb01f4030ad",
-  "webBuild": "87510eb01f4030adff836bfff19bbea57e838a3bce359babbb6256359d3ce496",
-  "publishedAt": "2026-08-16T12:18:41.344Z",
+  "releaseId": "web-6d9fd24636f2ecb8",
+  "webBuild": "6d9fd24636f2ecb8e92a2d439658a6359fc36d1805e7caad4a3b3da0b7f57d8a",
+  "publishedAt": "2026-08-16T13:31:56.638Z",
   "notes": [
-    "修复 Android 加载失败并新增主备服务器重试页",
-    "新增图片裁选、稳定透明度保存与默认/自定义头像",
-    "新增账号密码记忆、自动登录与设备登录设置",
-    "分类和提醒组支持修改、删除及自定义多个提醒时间",
-    "详情点击外部关闭、加粗重要性标识并完善提醒开关说明"
+    "新增定期任务、习惯与日记模块",
+    "自定义提醒支持小时、分钟和秒",
+    "修复卡片透明度并新增分模块导入导出"
   ],
   "clients": {
     "windows": {

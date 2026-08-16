@@ -14,10 +14,16 @@ const schema = [
   `CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS reminder_presets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, offsets_json TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS todos (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', deadline TEXT, reminder_preset_id TEXT, reminder_offsets_json TEXT NOT NULL DEFAULT '[]', category_id TEXT, priority TEXT NOT NULL DEFAULT 'normal', notes TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, completed_at TEXT, deleted_at TEXT, updated_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS schedule_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', recurrence TEXT NOT NULL DEFAULT 'daily', start_date TEXT NOT NULL, time_of_day TEXT, weekdays_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT)`,
+  `CREATE TABLE IF NOT EXISTS schedule_records (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, item_id TEXT NOT NULL, occurrence_date TEXT NOT NULL, completed_at TEXT NOT NULL, UNIQUE(user_id,item_id,occurrence_date))`,
+  `CREATE TABLE IF NOT EXISTS diary_entries (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, entry_date TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(user_id,entry_date))`,
   `CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_reminder_presets_user_id ON reminder_presets(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_todos_user_status_deadline ON todos(user_id, status, deadline)`,
   `CREATE INDEX IF NOT EXISTS idx_todos_user_created_at ON todos(user_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_schedule_items_user_kind_status ON schedule_items(user_id, kind, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_schedule_records_user_date ON schedule_records(user_id, occurrence_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_diary_entries_user_date ON diary_entries(user_id, entry_date)`,
 ];
 
 let initialized: Promise<unknown> | null = null;
@@ -163,19 +169,51 @@ function todo(row: Json) {
   return { id: row.id, title: row.title, content: row.content, deadline: row.deadline, reminderPresetId: row.reminder_preset_id, reminderOffsets: JSON.parse(String(row.reminder_offsets_json || "[]")), categoryId: row.category_id, priority: row.priority, notes: row.notes, status: row.status, createdAt: row.created_at, completedAt: row.completed_at, deletedAt: row.deleted_at, updatedAt: row.updated_at };
 }
 
+function scheduleItem(row: Json) {
+  return { id: row.id, kind: row.kind, title: row.title, notes: row.notes, recurrence: row.recurrence, startDate: row.start_date, timeOfDay: row.time_of_day, weekdays: JSON.parse(String(row.weekdays_json || "[]")), status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, deletedAt: row.deleted_at };
+}
+
+function scheduleRecord(row: Json) {
+  return { id: row.id, itemId: row.item_id, occurrenceDate: row.occurrence_date, completedAt: row.completed_at };
+}
+
+function diaryEntry(row: Json) {
+  return { id: row.id, entryDate: row.entry_date, content: row.content, createdAt: row.created_at, updatedAt: row.updated_at };
+}
+
+function validDate(value: unknown) {
+  const text = String(value || ""); if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const [year, month, day] = text.split("-").map(Number); return new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) === text;
+}
+function validTime(value: unknown) { return /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(String(value || "")); }
+function normalizedWeekdays(value: unknown) {
+  return Array.isArray(value) ? [...new Set(value.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort() : [];
+}
+function normalizedSettings(value: unknown) {
+  const settings = value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Json) } : {};
+  const opacity = Number(settings.cardOpacity ?? 92); settings.cardOpacity = Number.isFinite(opacity) ? Math.max(15, Math.min(100, opacity)) : 92;
+  return settings;
+}
+
 async function bootstrap(request: Request, env: Env, user: User) {
   await prepareUser(env, user);
   await env.DB.prepare("DELETE FROM todos WHERE user_id=? AND status='deleted' AND deleted_at < datetime('now','-30 days')").bind(user.id).run();
-  const [profile, todos, categories, presets] = await Promise.all([
+  const [profile, todos, categories, presets, schedules, scheduleRecords, diaryEntries] = await Promise.all([
     env.DB.prepare("SELECT id,email,name,avatar_url,settings_json FROM users WHERE id=?").bind(user.id).first<Json>(),
     env.DB.prepare("SELECT * FROM todos WHERE user_id=? ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END,deadline ASC,created_at DESC").bind(user.id).all<Json>(),
     env.DB.prepare("SELECT id,name,color,is_default isDefault FROM categories WHERE user_id=? ORDER BY is_default DESC,created_at").bind(user.id).all<Json>(),
     env.DB.prepare("SELECT id,name,offsets_json,is_default isDefault FROM reminder_presets WHERE user_id=? ORDER BY is_default DESC,created_at").bind(user.id).all<Json>(),
+    env.DB.prepare("SELECT * FROM schedule_items WHERE user_id=? ORDER BY status,created_at DESC").bind(user.id).all<Json>(),
+    env.DB.prepare("SELECT * FROM schedule_records WHERE user_id=? ORDER BY occurrence_date DESC").bind(user.id).all<Json>(),
+    env.DB.prepare("SELECT * FROM diary_entries WHERE user_id=? ORDER BY entry_date DESC").bind(user.id).all<Json>(),
   ]);
   return response(request, env, {
     user: { id: profile?.id, email: profile?.email, name: profile?.name, avatarUrl: profile?.avatar_url, settings: JSON.parse(String(profile?.settings_json || "{}")) },
     todos: todos.results.map(todo), categories: categories.results,
     reminderPresets: presets.results.map((item) => ({ id: item.id, name: item.name, isDefault: item.isDefault, offsets: JSON.parse(String(item.offsets_json || "[]")) })),
+    schedules: schedules.results.map(scheduleItem),
+    scheduleRecords: scheduleRecords.results.map(scheduleRecord),
+    diaryEntries: diaryEntries.results.map(diaryEntry),
   });
 }
 
@@ -263,9 +301,170 @@ async function presets(request: Request, env: Env, user: User) {
   ]); return response(request, env, { ok: true, fallbackId: fallback?.id || null });
 }
 
+async function schedules(request: Request, env: Env, user: User, id?: string) {
+  await prepareUser(env, user);
+  const now = new Date().toISOString();
+  if (request.method === "POST" && !id) {
+    const body = await request.json<Json>();
+    const kind = body.kind === "habit" ? "habit" : "routine";
+    const title = String(body.title || "").trim();
+    const recurrence = String(body.recurrence || "daily");
+    const startDate = String(body.startDate || now.slice(0, 10));
+    const weekdays = normalizedWeekdays(body.weekdays);
+    const timeOfDay = kind === "routine" ? String(body.timeOfDay || "09:00") : null;
+    if (!title || title.length > 80) return response(request, env, { error: "计划名称应为 1 至 80 个字" }, 400);
+    if (!new Set(["once", "daily", "weekly", "custom", "holidays"]).has(recurrence)) return response(request, env, { error: "重复规则无效" }, 400);
+    if (!validDate(startDate) || (kind === "routine" && !validTime(timeOfDay))) return response(request, env, { error: "日期或时间格式无效" }, 400);
+    if ((recurrence === "weekly" || recurrence === "custom") && !weekdays.length) return response(request, env, { error: "请至少选择一个星期" }, 400);
+    const itemId = crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO schedule_items (id,user_id,kind,title,notes,recurrence,start_date,time_of_day,weekdays_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'active',?,?)")
+      .bind(itemId, user.id, kind, title, String(body.notes || "").slice(0, 2000), recurrence, startDate, timeOfDay, JSON.stringify(weekdays), now, now).run();
+    const row = await env.DB.prepare("SELECT * FROM schedule_items WHERE id=? AND user_id=?").bind(itemId, user.id).first<Json>();
+    return response(request, env, { item: scheduleItem(row || {}) }, 201);
+  }
+  if (!id) return response(request, env, { error: "缺少计划 ID" }, 400);
+  const current = await env.DB.prepare("SELECT * FROM schedule_items WHERE id=? AND user_id=?").bind(id, user.id).first<Json>();
+  if (!current) return response(request, env, { error: "计划不存在" }, 404);
+  if (request.method === "DELETE") {
+    if (current.status !== "deleted") return response(request, env, { error: "请先将计划移入回收站" }, 400);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM schedule_records WHERE item_id=? AND user_id=?").bind(id, user.id),
+      env.DB.prepare("DELETE FROM schedule_items WHERE id=? AND user_id=?").bind(id, user.id),
+    ]);
+    return response(request, env, { ok: true });
+  }
+  const body = await request.json<Json>();
+  const title = String(body.title === undefined ? current.title : body.title).trim();
+  const recurrence = String(body.recurrence === undefined ? current.recurrence : body.recurrence);
+  const startDate = String(body.startDate === undefined ? current.start_date : body.startDate);
+  const weekdays = body.weekdays === undefined ? JSON.parse(String(current.weekdays_json || "[]")) : normalizedWeekdays(body.weekdays);
+  const timeOfDay = current.kind === "routine" ? String(body.timeOfDay === undefined ? current.time_of_day : body.timeOfDay) : null;
+  const status = String(body.status === undefined ? current.status : body.status);
+  if (!title || title.length > 80 || !new Set(["once", "daily", "weekly", "custom", "holidays"]).has(recurrence)) return response(request, env, { error: "计划内容或重复规则无效" }, 400);
+  if (!validDate(startDate) || (current.kind === "routine" && !validTime(timeOfDay)) || !new Set(["active", "deleted"]).has(status)) return response(request, env, { error: "计划日期、时间或状态无效" }, 400);
+  if ((recurrence === "weekly" || recurrence === "custom") && !weekdays.length) return response(request, env, { error: "请至少选择一个星期" }, 400);
+  const deletedAt = status === "deleted" ? (current.deleted_at || now) : null;
+  await env.DB.prepare("UPDATE schedule_items SET title=?,notes=?,recurrence=?,start_date=?,time_of_day=?,weekdays_json=?,status=?,deleted_at=?,updated_at=? WHERE id=? AND user_id=?")
+    .bind(title, String(body.notes === undefined ? current.notes : body.notes).slice(0, 2000), recurrence, startDate, timeOfDay, JSON.stringify(weekdays), status, deletedAt, now, id, user.id).run();
+  const row = await env.DB.prepare("SELECT * FROM schedule_items WHERE id=? AND user_id=?").bind(id, user.id).first<Json>();
+  return response(request, env, { item: scheduleItem(row || {}) });
+}
+
+async function scheduleCompletion(request: Request, env: Env, user: User, id: string) {
+  await prepareUser(env, user);
+  const body = await request.json<Json>(); const occurrenceDate = String(body.occurrenceDate || ""); const completed = body.completed !== false;
+  if (!validDate(occurrenceDate)) return response(request, env, { error: "完成日期无效" }, 400);
+  const item = await env.DB.prepare("SELECT id FROM schedule_items WHERE id=? AND user_id=? AND status='active'").bind(id, user.id).first();
+  if (!item) return response(request, env, { error: "计划不存在或已在回收站" }, 404);
+  if (!completed) {
+    await env.DB.prepare("DELETE FROM schedule_records WHERE item_id=? AND user_id=? AND occurrence_date=?").bind(id, user.id, occurrenceDate).run();
+    return response(request, env, { record: null });
+  }
+  const now = new Date().toISOString(); const recordId = crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO schedule_records (id,user_id,item_id,occurrence_date,completed_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id,item_id,occurrence_date) DO UPDATE SET completed_at=excluded.completed_at")
+    .bind(recordId, user.id, id, occurrenceDate, now).run();
+  const row = await env.DB.prepare("SELECT * FROM schedule_records WHERE user_id=? AND item_id=? AND occurrence_date=?").bind(user.id, id, occurrenceDate).first<Json>();
+  return response(request, env, { record: scheduleRecord(row || {}) });
+}
+
+async function diary(request: Request, env: Env, user: User, entryDate: string) {
+  await prepareUser(env, user);
+  if (!validDate(entryDate)) return response(request, env, { error: "日记日期无效" }, 400);
+  const body = await request.json<Json>(); const content = String(body.content ?? "");
+  if (content.length > 100_000) return response(request, env, { error: "单篇日记不能超过 100000 个字" }, 413);
+  const now = new Date().toISOString(); const id = crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO diary_entries (id,user_id,entry_date,content,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id,entry_date) DO UPDATE SET content=excluded.content,updated_at=excluded.updated_at")
+    .bind(id, user.id, entryDate, content, now, now).run();
+  const row = await env.DB.prepare("SELECT * FROM diary_entries WHERE user_id=? AND entry_date=?").bind(user.id, entryDate).first<Json>();
+  return response(request, env, { entry: diaryEntry(row || {}) });
+}
+
+async function snapshot(env: Env, user: User, section: string) {
+  if (section === "config") {
+    const [profile, categories, presets] = await Promise.all([
+      env.DB.prepare("SELECT name,settings_json FROM users WHERE id=?").bind(user.id).first<Json>(),
+      env.DB.prepare("SELECT name,color,is_default isDefault FROM categories WHERE user_id=? ORDER BY is_default DESC,created_at").bind(user.id).all<Json>(),
+      env.DB.prepare("SELECT name,offsets_json,is_default isDefault FROM reminder_presets WHERE user_id=? ORDER BY is_default DESC,created_at").bind(user.id).all<Json>(),
+    ]);
+    return { name: profile?.name, settings: JSON.parse(String(profile?.settings_json || "{}")), categories: categories.results, reminderPresets: presets.results.map((item) => ({ name: item.name, offsets: JSON.parse(String(item.offsets_json || "[]")), isDefault: item.isDefault })) };
+  }
+  if (section === "todos") {
+    const rows = await env.DB.prepare("SELECT t.*,c.name category_name,p.name preset_name FROM todos t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN reminder_presets p ON p.id=t.reminder_preset_id WHERE t.user_id=? ORDER BY t.created_at").bind(user.id).all<Json>();
+    return { items: rows.results.map((row) => ({ ...todo(row), categoryName: row.category_name, presetName: row.preset_name })) };
+  }
+  if (section === "routines" || section === "habits") {
+    const kind = section === "habits" ? "habit" : "routine";
+    const [items, records] = await Promise.all([
+      env.DB.prepare("SELECT * FROM schedule_items WHERE user_id=? AND kind=? ORDER BY created_at").bind(user.id, kind).all<Json>(),
+      env.DB.prepare("SELECT r.* FROM schedule_records r JOIN schedule_items i ON i.id=r.item_id WHERE r.user_id=? AND i.kind=? ORDER BY r.occurrence_date").bind(user.id, kind).all<Json>(),
+    ]);
+    return { items: items.results.map(scheduleItem), records: records.results.map(scheduleRecord) };
+  }
+  if (section === "diary") {
+    const rows = await env.DB.prepare("SELECT * FROM diary_entries WHERE user_id=? ORDER BY entry_date").bind(user.id).all<Json>();
+    return { entries: rows.results.map(diaryEntry) };
+  }
+  throw new Error("不支持的数据分区");
+}
+
+function markdownSnapshot(section: string, data: Json) {
+  const title: Record<string, string> = { config: "账户配置", todos: "待办", routines: "定期任务", habits: "习惯", diary: "日记" };
+  const lines = [`# 记时 · ${title[section] || section}`, "", `导出时间：${new Date().toISOString()}`, ""];
+  if (section === "config") return [...lines, `- 昵称：${data.name || ""}`, `- 设置：\`${JSON.stringify(data.settings || {})}\``, "", "## 分类", ...((data.categories as Json[] || []).map((item) => `- ${item.name} (${item.color})`)), "", "## 提醒组", ...((data.reminderPresets as Json[] || []).map((item) => `- ${item.name}：${(item.offsets as number[] || []).join(", ")} 分钟`))].join("\n");
+  if (section === "diary") return [...lines, ...((data.entries as Json[] || []).flatMap((item) => [`## ${item.entryDate}`, "", String(item.content || ""), ""]))].join("\n");
+  const items = (data.items as Json[] || []);
+  return [...lines, ...items.flatMap((item) => [`## ${item.title || "未命名"}`, "", `- 状态：${item.status || "active"}`, item.deadline ? `- 截止：${item.deadline}` : `- 规则：${item.recurrence || ""}${item.timeOfDay ? ` · ${item.timeOfDay}` : ""}`, item.content || item.notes ? "" : "", String(item.content || item.notes || ""), ""])].join("\n");
+}
+
+async function exportData(request: Request, env: Env, user: User) {
+  await prepareUser(env, user);
+  const url = new URL(request.url); const section = url.searchParams.get("section") || "todos"; const format = url.searchParams.get("format") === "md" ? "md" : "json";
+  const data = await snapshot(env, user, section); const exportedAt = new Date().toISOString();
+  const body = format === "md" ? markdownSnapshot(section, data as Json) : JSON.stringify({ schemaVersion: 1, section, exportedAt, data }, null, 2);
+  const extension = format === "md" ? "md" : "json"; const filename = `jishi-${section}-${exportedAt.slice(0, 10)}.${extension}`;
+  return new Response(body, { headers: { ...corsHeaders(request, env), "Content-Type": format === "md" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="${filename}"`, "Cache-Control": "no-store" } });
+}
+
+async function runBatch(env: Env, statements: D1PreparedStatement[]) {
+  for (let index = 0; index < statements.length; index += 75) await env.DB.batch(statements.slice(index, index + 75));
+}
+
+async function importData(request: Request, env: Env, user: User) {
+  await prepareUser(env, user);
+  const contentLength = Number(request.headers.get("content-length") || 0); if (Number.isFinite(contentLength) && contentLength > 10 * 1024 * 1024) return response(request, env, { error: "导入文件不能超过 10MB" }, 413);
+  const section = new URL(request.url).searchParams.get("section") || ""; const envelope = await request.json<Json>();
+  if (Number(envelope.schemaVersion) !== 1 || envelope.section !== section || !envelope.data || typeof envelope.data !== "object") return response(request, env, { error: "导入文件格式或分区不匹配" }, 400);
+  const data = envelope.data as Json; const now = new Date().toISOString(); const statements: D1PreparedStatement[] = [];
+  if (section === "config") {
+    const settings = normalizedSettings(data.settings); const name = String(data.name || user.name).trim().slice(0, 24) || user.name;
+    const categories = Array.isArray(data.categories) ? data.categories.slice(0, 100) as Json[] : []; const presets = Array.isArray(data.reminderPresets) ? data.reminderPresets.slice(0, 100) as Json[] : [];
+    statements.push(env.DB.prepare("UPDATE users SET name=?,settings_json=?,updated_at=? WHERE id=?").bind(name, JSON.stringify(settings), now, user.id));
+    statements.push(env.DB.prepare("UPDATE todos SET category_id=NULL,reminder_preset_id=NULL WHERE user_id=?").bind(user.id), env.DB.prepare("DELETE FROM categories WHERE user_id=?").bind(user.id), env.DB.prepare("DELETE FROM reminder_presets WHERE user_id=?").bind(user.id));
+    const safeCategories = categories.length ? categories : [{ name: "默认", color: "#9e8d74", isDefault: 1 }];
+    safeCategories.forEach((item, index) => statements.push(env.DB.prepare("INSERT INTO categories (id,user_id,name,color,is_default,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(), user.id, String(item.name || `分类 ${index + 1}`).slice(0, 12), /^#[0-9a-f]{6}$/i.test(String(item.color)) ? item.color : "#9e8d74", index === 0 ? 1 : 0, now)));
+    const safePresets = presets.length ? presets : [{ name: "默认", offsets: [10], isDefault: 1 }];
+    safePresets.forEach((item, index) => { const offsets = Array.isArray(item.offsets) ? item.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0).slice(0, 8) : [10]; statements.push(env.DB.prepare("INSERT INTO reminder_presets (id,user_id,name,offsets_json,is_default,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(), user.id, String(item.name || `提醒组 ${index + 1}`).slice(0, 20), JSON.stringify(offsets.length ? offsets : [10]), index === 0 ? 1 : 0, now)); });
+  } else if (section === "todos") {
+    const items = Array.isArray(data.items) ? data.items.slice(0, 5000) as Json[] : [];
+    const [categories, presets] = await Promise.all([env.DB.prepare("SELECT id,name FROM categories WHERE user_id=?").bind(user.id).all<Json>(), env.DB.prepare("SELECT id,name,offsets_json FROM reminder_presets WHERE user_id=?").bind(user.id).all<Json>()]);
+    const categoryMap = new Map(categories.results.map((item) => [String(item.name), String(item.id)])); const presetMap = new Map(presets.results.map((item) => [String(item.name), item]));
+    statements.push(env.DB.prepare("DELETE FROM todos WHERE user_id=?").bind(user.id));
+    for (const item of items) { const title = String(item.title || "").trim().slice(0, 60); if (!title) continue; const preset = presetMap.get(String(item.presetName || "")); const status = new Set(["active", "completed", "deleted"]).has(String(item.status)) ? String(item.status) : "active"; statements.push(env.DB.prepare("INSERT INTO todos (id,user_id,title,content,deadline,reminder_preset_id,reminder_offsets_json,category_id,priority,notes,status,created_at,completed_at,deleted_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(), user.id, title, String(item.content || ""), item.deadline || null, preset?.id || null, preset?.offsets_json || JSON.stringify(Array.isArray(item.reminderOffsets) ? item.reminderOffsets : []), categoryMap.get(String(item.categoryName || "")) || null, new Set(["low", "normal", "important", "urgent"]).has(String(item.priority)) ? item.priority : "normal", String(item.notes || ""), status, String(item.createdAt || now), item.completedAt || null, item.deletedAt || null, now)); }
+  } else if (section === "routines" || section === "habits") {
+    const kind = section === "habits" ? "habit" : "routine"; const items = Array.isArray(data.items) ? data.items.slice(0, 2000) as Json[] : []; const records = Array.isArray(data.records) ? data.records.slice(0, 20000) as Json[] : []; const idMap = new Map<string, string>();
+    statements.push(env.DB.prepare("DELETE FROM schedule_records WHERE user_id=? AND item_id IN (SELECT id FROM schedule_items WHERE user_id=? AND kind=?)").bind(user.id, user.id, kind), env.DB.prepare("DELETE FROM schedule_items WHERE user_id=? AND kind=?").bind(user.id, kind));
+    for (const item of items) { const title = String(item.title || "").trim().slice(0, 80); if (!title || !validDate(item.startDate)) continue; const recurrence = new Set(["once", "daily", "weekly", "custom", "holidays"]).has(String(item.recurrence)) ? String(item.recurrence) : "daily"; const newId = crypto.randomUUID(); idMap.set(String(item.id), newId); statements.push(env.DB.prepare("INSERT INTO schedule_items (id,user_id,kind,title,notes,recurrence,start_date,time_of_day,weekdays_json,status,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(newId, user.id, kind, title, String(item.notes || "").slice(0, 2000), recurrence, item.startDate, kind === "routine" && validTime(item.timeOfDay) ? item.timeOfDay : kind === "routine" ? "09:00" : null, JSON.stringify(normalizedWeekdays(item.weekdays)), item.status === "deleted" ? "deleted" : "active", String(item.createdAt || now), now, item.status === "deleted" ? String(item.deletedAt || now) : null)); }
+    for (const record of records) { const itemId = idMap.get(String(record.itemId)); if (itemId && validDate(record.occurrenceDate)) statements.push(env.DB.prepare("INSERT OR IGNORE INTO schedule_records (id,user_id,item_id,occurrence_date,completed_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), user.id, itemId, record.occurrenceDate, String(record.completedAt || now))); }
+  } else if (section === "diary") {
+    const entries = Array.isArray(data.entries) ? data.entries.slice(0, 10000) as Json[] : []; statements.push(env.DB.prepare("DELETE FROM diary_entries WHERE user_id=?").bind(user.id));
+    for (const item of entries) if (validDate(item.entryDate)) statements.push(env.DB.prepare("INSERT INTO diary_entries (id,user_id,entry_date,content,created_at,updated_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(), user.id, item.entryDate, String(item.content || "").slice(0, 100_000), String(item.createdAt || now), now));
+  } else return response(request, env, { error: "不支持的数据分区" }, 400);
+  await runBatch(env, statements); return response(request, env, { ok: true, imported: Math.max(0, statements.length - 1) });
+}
+
 async function profile(request: Request, env: Env, user: User) {
   await prepareUser(env, user); const body = await request.json<Json>(); const current = await env.DB.prepare("SELECT name,settings_json,avatar_url FROM users WHERE id=?").bind(user.id).first<Json>();
-  const name = String(body.name || current?.name || user.name).trim().slice(0, 24); const settings = body.settings ?? JSON.parse(String(current?.settings_json || "{}")); const avatarUrl = body.avatarUrl === undefined ? current?.avatar_url : body.avatarUrl;
+  const name = String(body.name || current?.name || user.name).trim().slice(0, 24); const settings = normalizedSettings(body.settings ?? JSON.parse(String(current?.settings_json || "{}"))); const avatarUrl = body.avatarUrl === undefined ? current?.avatar_url : body.avatarUrl;
   await env.DB.prepare("UPDATE users SET name=?,settings_json=?,avatar_url=?,updated_at=? WHERE id=?").bind(name, JSON.stringify(settings), avatarUrl || null, new Date().toISOString(), user.id).run(); return response(request, env, { user: { id: user.id, email: user.email, name, settings, avatarUrl } });
 }
 
@@ -300,6 +499,12 @@ export default {
       if (todoMatch && request.method === "DELETE") { await prepareUser(env, user); await env.DB.prepare("DELETE FROM todos WHERE id=? AND user_id=? AND status='deleted'").bind(todoMatch[1], user.id).run(); return response(request, env, { ok: true }); }
       if (url.pathname === "/api/categories" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return categories(request, env, user);
       if (url.pathname === "/api/presets" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return presets(request, env, user);
+      if (url.pathname === "/api/schedules" && request.method === "POST") return schedules(request, env, user);
+      const scheduleMatch = url.pathname.match(/^\/api\/schedules\/([^/]+)$/); if (scheduleMatch && (request.method === "PATCH" || request.method === "DELETE")) return schedules(request, env, user, scheduleMatch[1]);
+      const completionMatch = url.pathname.match(/^\/api\/schedules\/([^/]+)\/completion$/); if (completionMatch && request.method === "PUT") return scheduleCompletion(request, env, user, completionMatch[1]);
+      const diaryMatch = url.pathname.match(/^\/api\/diary\/(\d{4}-\d{2}-\d{2})$/); if (diaryMatch && request.method === "PUT") return diary(request, env, user, diaryMatch[1]);
+      if (url.pathname === "/api/data/export" && request.method === "GET") return exportData(request, env, user);
+      if (url.pathname === "/api/data/import" && request.method === "POST") return importData(request, env, user);
       if (url.pathname === "/api/profile" && request.method === "PATCH") return profile(request, env, user);
       if (url.pathname === "/api/media" && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) return media(request, env, user);
       return response(request, env, { error: "接口不存在" }, 404);
