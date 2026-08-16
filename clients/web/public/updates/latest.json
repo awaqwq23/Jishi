@@ -1,26 +1,28 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-049b1bbab2b721e0",
-  "webBuild": "049b1bbab2b721e0627a82b8ab94929ca218b502bc5c5b334010d384b2071ef0",
-  "publishedAt": "2026-08-13T15:48:57.417Z",
+  "releaseId": "web-87510eb01f4030ad",
+  "webBuild": "87510eb01f4030adff836bfff19bbea57e838a3bce359babbb6256359d3ce496",
+  "publishedAt": "2026-08-16T12:18:41.344Z",
   "notes": [
-    "Web、Windows 和 Android 正式使用 awaqwq233.com/note/。",
-    "保留原有 heartbeat 页面并隔离 Service Worker 作用域。",
-    "包含自定义背景图片和 Windows 白屏自动回退修复。"
+    "修复 Android 加载失败并新增主备服务器重试页",
+    "新增图片裁选、稳定透明度保存与默认/自定义头像",
+    "新增账号密码记忆、自动登录与设备登录设置",
+    "分类和提醒组支持修改、删除及自定义多个提醒时间",
+    "详情点击外部关闭、加粗重要性标识并完善提醒开关说明"
   ],
   "clients": {
     "windows": {
-      "version": "0.4.3",
-      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.3.exe",
-      "sha256": "5AF4CC9B745247FECA37E8E8E31E4532CA858B0004A6640BB3839B565BF11AF8",
-      "size": 99626342,
+      "version": "0.4.4",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.4.exe",
+      "sha256": "773D31AD5D0EDEEAFA8AB5F7C11FA813BA26A1E7E219E7E10102A046F593AA85",
+      "size": 99626374,
       "required": false
     },
     "android": {
-      "version": "0.4.3",
-      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.3.apk",
-      "sha256": "7DBF0786B6833D58792BE53E19093C4EA9FE1299ADE560029E728AC200431042",
-      "size": 4052422,
+      "version": "0.4.4",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.4.apk",
+      "sha256": "4C4075B8E818B4810D150D41612A284E3C35C02BE20C427ABF86D32474BCBEA4",
+      "size": 4053720,
       "required": false
     }
   }

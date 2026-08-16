@@ -52,3 +52,24 @@ test("includes product metadata and installable shell", async () => {
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await access(new URL("public/sw.js", templateRoot));
 });
+
+test("keeps the reported interaction regressions covered", async () => {
+  const [app, css, server, androidConfig, offlinePage] = await Promise.all([
+    readFile(new URL("../app/TodoApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../../../server/src/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../android/capacitor.config.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../android/www/offline.html", import.meta.url), "utf8"),
+  ]);
+  assert.match(app, /notificationsSupported\(\)/);
+  assert.match(app, /detail-layer/);
+  assert.match(app, /function ImageCropper/);
+  assert.match(app, /onPointerUp=.*commitOpacity/);
+  assert.match(app, /jishi-device-login-v1/);
+  assert.match(app, /PATCH.*api\/categories/s);
+  assert.match(app, /PATCH.*api\/presets/s);
+  assert.match(css, /task-card::before[^}]*width:\s*7px/s);
+  assert.match(server, /request\.method === "PATCH"/);
+  assert.match(androidConfig, /errorPath:\s*"offline\.html"/);
+  assert.match(offlinePage, /重新连接主服务器/);
+});

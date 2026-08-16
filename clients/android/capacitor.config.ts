@@ -11,6 +11,7 @@ const config: CapacitorConfig = {
   server: {
     url: process.env.JISHI_WEB_URL || "https://awaqwq233.com/note/",
     cleartext: false,
+    errorPath: "offline.html",
   },
   android: { allowMixedContent: false, backgroundColor: "#f4f0e8" },
 };

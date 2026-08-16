@@ -214,15 +214,53 @@ async function categories(request: Request, env: Env, user: User) {
   await prepareUser(env, user);
   if (request.method === "POST") { const body = await request.json<Json>(); const name = String(body.name || "").trim(); if (!name || name.length > 12) return response(request, env, { error: "分类名称应为 1 至 12 个字" }, 400); const category = { id: crypto.randomUUID(), name, color: String(body.color || "#8d82a6"), isDefault: 0 }; await env.DB.prepare("INSERT INTO categories (id,user_id,name,color,is_default,created_at) VALUES (?,?,?,?,0,?)").bind(category.id, user.id, name, category.color, new Date().toISOString()).run(); return response(request, env, { category }, 201); }
   const id = new URL(request.url).searchParams.get("id"); if (!id) return response(request, env, { error: "缺少分类 ID" }, 400);
-  const target = await env.DB.prepare("SELECT is_default FROM categories WHERE id=? AND user_id=?").bind(id, user.id).first<{ is_default: number }>(); if (!target || target.is_default) return response(request, env, { error: "默认分类不能删除" }, 400);
-  const fallback = await env.DB.prepare("SELECT id FROM categories WHERE user_id=? AND is_default=1").bind(user.id).first<{ id: string }>();
-  await env.DB.batch([env.DB.prepare("UPDATE todos SET category_id=? WHERE user_id=? AND category_id=?").bind(fallback?.id || null, user.id, id), env.DB.prepare("DELETE FROM categories WHERE id=? AND user_id=?").bind(id, user.id)]); return response(request, env, { ok: true });
+  const target = await env.DB.prepare("SELECT id,name,color,is_default FROM categories WHERE id=? AND user_id=?").bind(id, user.id).first<Json>();
+  if (!target) return response(request, env, { error: "分类不存在" }, 404);
+  if (request.method === "PATCH") {
+    const body = await request.json<Json>(); const name = String(body.name || target.name || "").trim(); const color = String(body.color || target.color || "#8d82a6");
+    if (!name || name.length > 12) return response(request, env, { error: "分类名称应为 1 至 12 个字" }, 400);
+    if (!/^#[0-9a-f]{6}$/i.test(color)) return response(request, env, { error: "分类颜色格式不正确" }, 400);
+    await env.DB.prepare("UPDATE categories SET name=?,color=? WHERE id=? AND user_id=?").bind(name, color, id, user.id).run();
+    return response(request, env, { category: { id, name, color, isDefault: Number(target.is_default || 0) } });
+  }
+  const count = await env.DB.prepare("SELECT COUNT(*) count FROM categories WHERE user_id=?").bind(user.id).first<{ count: number }>();
+  if ((count?.count || 0) <= 1) return response(request, env, { error: "至少需要保留一个分类" }, 400);
+  const fallback = await env.DB.prepare("SELECT id FROM categories WHERE user_id=? AND id<>? ORDER BY is_default DESC,created_at LIMIT 1").bind(user.id, id).first<{ id: string }>();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE todos SET category_id=? WHERE user_id=? AND category_id=?").bind(fallback?.id || null, user.id, id),
+    env.DB.prepare("DELETE FROM categories WHERE id=? AND user_id=?").bind(id, user.id),
+    env.DB.prepare("UPDATE categories SET is_default=CASE WHEN id=? THEN 1 ELSE 0 END WHERE user_id=?").bind(fallback?.id || "", user.id),
+  ]); return response(request, env, { ok: true, fallbackId: fallback?.id || null });
 }
 
-async function createPreset(request: Request, env: Env, user: User) {
-  await prepareUser(env, user); const body = await request.json<Json>(); const name = String(body.name || "").trim(); const offsets = Array.isArray(body.offsets) ? body.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0).slice(0, 8) : [];
-  if (!name || !offsets.length) return response(request, env, { error: "请填写名称和提醒时间" }, 400); const preset = { id: crypto.randomUUID(), name, offsets, isDefault: 0 };
-  await env.DB.prepare("INSERT INTO reminder_presets (id,user_id,name,offsets_json,is_default,created_at) VALUES (?,?,?,?,0,?)").bind(preset.id, user.id, name, JSON.stringify(offsets), new Date().toISOString()).run(); return response(request, env, { preset }, 201);
+async function presets(request: Request, env: Env, user: User) {
+  await prepareUser(env, user);
+  if (request.method === "POST") {
+    const body = await request.json<Json>(); const name = String(body.name || "").trim(); const offsets = Array.isArray(body.offsets) ? [...new Set(body.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0))].slice(0, 8) : [];
+    if (!name || name.length > 20 || !offsets.length) return response(request, env, { error: "请填写 1 至 20 个字的名称和有效提醒时间" }, 400); const preset = { id: crypto.randomUUID(), name, offsets, isDefault: 0 };
+    await env.DB.prepare("INSERT INTO reminder_presets (id,user_id,name,offsets_json,is_default,created_at) VALUES (?,?,?,?,0,?)").bind(preset.id, user.id, name, JSON.stringify(offsets), new Date().toISOString()).run(); return response(request, env, { preset }, 201);
+  }
+  const id = new URL(request.url).searchParams.get("id"); if (!id) return response(request, env, { error: "缺少提醒组 ID" }, 400);
+  const target = await env.DB.prepare("SELECT id,name,offsets_json,is_default FROM reminder_presets WHERE id=? AND user_id=?").bind(id, user.id).first<Json>();
+  if (!target) return response(request, env, { error: "提醒组不存在" }, 404);
+  if (request.method === "PATCH") {
+    const body = await request.json<Json>(); const name = String(body.name || target.name || "").trim(); const offsets = Array.isArray(body.offsets) ? [...new Set(body.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0))].slice(0, 8) : JSON.parse(String(target.offsets_json || "[]"));
+    if (!name || name.length > 20 || !offsets.length) return response(request, env, { error: "请填写 1 至 20 个字的名称和有效提醒时间" }, 400);
+    const serialized = JSON.stringify(offsets);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE reminder_presets SET name=?,offsets_json=? WHERE id=? AND user_id=?").bind(name, serialized, id, user.id),
+      env.DB.prepare("UPDATE todos SET reminder_offsets_json=?,updated_at=? WHERE user_id=? AND reminder_preset_id=? AND status='active'").bind(serialized, new Date().toISOString(), user.id, id),
+    ]);
+    return response(request, env, { preset: { id, name, offsets, isDefault: Number(target.is_default || 0) } });
+  }
+  const count = await env.DB.prepare("SELECT COUNT(*) count FROM reminder_presets WHERE user_id=?").bind(user.id).first<{ count: number }>();
+  if ((count?.count || 0) <= 1) return response(request, env, { error: "至少需要保留一个提醒组" }, 400);
+  const fallback = await env.DB.prepare("SELECT id FROM reminder_presets WHERE user_id=? AND id<>? ORDER BY is_default DESC,created_at LIMIT 1").bind(user.id, id).first<{ id: string }>();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE todos SET reminder_preset_id=NULL WHERE user_id=? AND reminder_preset_id=?").bind(user.id, id),
+    env.DB.prepare("DELETE FROM reminder_presets WHERE id=? AND user_id=?").bind(id, user.id),
+    env.DB.prepare("UPDATE reminder_presets SET is_default=CASE WHEN id=? THEN 1 ELSE 0 END WHERE user_id=?").bind(fallback?.id || "", user.id),
+  ]); return response(request, env, { ok: true, fallbackId: fallback?.id || null });
 }
 
 async function profile(request: Request, env: Env, user: User) {
@@ -260,8 +298,8 @@ export default {
       if (url.pathname === "/api/todos" && request.method === "POST") return createTodo(request, env, user);
       const todoMatch = url.pathname.match(/^\/api\/todos\/([^/]+)$/); if (todoMatch && request.method === "PATCH") return updateTodo(request, env, user, todoMatch[1]);
       if (todoMatch && request.method === "DELETE") { await prepareUser(env, user); await env.DB.prepare("DELETE FROM todos WHERE id=? AND user_id=? AND status='deleted'").bind(todoMatch[1], user.id).run(); return response(request, env, { ok: true }); }
-      if (url.pathname === "/api/categories" && (request.method === "POST" || request.method === "DELETE")) return categories(request, env, user);
-      if (url.pathname === "/api/presets" && request.method === "POST") return createPreset(request, env, user);
+      if (url.pathname === "/api/categories" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return categories(request, env, user);
+      if (url.pathname === "/api/presets" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return presets(request, env, user);
       if (url.pathname === "/api/profile" && request.method === "PATCH") return profile(request, env, user);
       if (url.pathname === "/api/media" && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) return media(request, env, user);
       return response(request, env, { error: "接口不存在" }, 404);

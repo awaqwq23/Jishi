@@ -1,6 +1,6 @@
 {
   "name": "@jishi/windows",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "记时多用户待办 Windows 客户端",
   "author": "Jishi",
   "private": true,
