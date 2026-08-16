@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-6d9fd24636f2ecb8",
-  "webBuild": "6d9fd24636f2ecb8e92a2d439658a6359fc36d1805e7caad4a3b3da0b7f57d8a",
-  "publishedAt": "2026-08-16T13:31:56.638Z",
+  "releaseId": "web-66f91208d4970d31",
+  "webBuild": "66f91208d4970d317ca8d238d1ccb0c82d2ee830f2c8d4c769f799e8c54e9b03",
+  "publishedAt": "2026-08-16T14:55:27.113Z",
   "notes": [
-    "新增定期任务、习惯与日记模块",
-    "自定义提醒支持小时、分钟和秒",
-    "修复卡片透明度并新增分模块导入导出"
+    "提醒时间支持天、小时、分钟",
+    "修复提醒时间新增、外观即时更新和透明卡片滑动显示",
+    "新增背景透明度与背景亚克力设置"
   ],
   "clients": {
     "windows": {

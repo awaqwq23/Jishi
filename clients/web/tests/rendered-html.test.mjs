@@ -65,7 +65,7 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(app, /notificationsSupported\(\)/);
   assert.match(app, /detail-layer/);
   assert.match(app, /function ImageCropper/);
-  assert.match(app, /onPointerUp=.*commitOpacity/);
+  assert.match(app, /onPointerUp=.*commitAppearance\("cardOpacity"/);
   assert.match(app, /jishi-device-login-v1/);
   assert.match(app, /PATCH.*api\/categories/s);
   assert.match(app, /PATCH.*api\/presets/s);
@@ -74,9 +74,18 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(css, /app-shell\.has-custom-background/);
   assert.match(server, /request\.method === "PATCH"/);
   assert.match(app, /function ReminderOffsetsEditor/);
+  assert.match(app, /function nextReminderOffset/);
+  assert.match(app, /nextReminderOffset\(value\)/);
+  assert.match(app, /option value="days">天/);
   assert.match(app, /option value="hours">小时/);
   assert.match(app, /option value="minutes">分钟/);
-  assert.match(app, /option value="seconds">秒/);
+  assert.doesNotMatch(app, /option value="seconds">秒/);
+  assert.match(app, /backgroundOpacity/);
+  assert.match(app, /backgroundAcrylic/);
+  assert.match(app, /onChange=.*previewAppearance\(\{ cardOpacity/s);
+  assert.match(app, /style=\{\{ width: Math\.max\(0, -?drag\) \}\}/);
+  assert.doesNotMatch(css, /swipe-shell\.completing|swipe-shell\.deleting/);
+  assert.match(css, /background-acrylic::after/);
   assert.match(app, /function ScheduleBoard/);
   assert.match(app, /function DiaryBoard/);
   assert.match(app, /\/api\/data\/export/);

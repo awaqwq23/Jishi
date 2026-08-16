@@ -192,6 +192,9 @@ function normalizedWeekdays(value: unknown) {
 function normalizedSettings(value: unknown) {
   const settings = value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Json) } : {};
   const opacity = Number(settings.cardOpacity ?? 92); settings.cardOpacity = Number.isFinite(opacity) ? Math.max(15, Math.min(100, opacity)) : 92;
+  const backgroundOpacity = Number(settings.backgroundOpacity ?? 72); settings.backgroundOpacity = Number.isFinite(backgroundOpacity) ? Math.max(15, Math.min(100, backgroundOpacity)) : 72;
+  settings.acrylic = settings.acrylic !== false;
+  settings.backgroundAcrylic = settings.backgroundAcrylic === true;
   return settings;
 }
 
