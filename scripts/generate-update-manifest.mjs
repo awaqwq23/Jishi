@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat, writeFile, mkdir } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,6 +25,14 @@ async function fileRelease(platform, version, path) {
   };
 }
 
+const textExtensions = new Set([".css", ".js", ".json", ".svg", ".ts", ".tsx", ".webmanifest"]);
+
+function stableWebBytes(path, bytes) {
+  return textExtensions.has(extname(path).toLowerCase())
+    ? Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8")
+    : bytes;
+}
+
 async function webBuildHash(webRoot) {
   const files = [];
   async function walk(directory) {
@@ -44,7 +52,8 @@ async function webBuildHash(webRoot) {
   for (const file of files.sort()) {
     hash.update(relative(webRoot, file).replaceAll("\\", "/"));
     hash.update("\0");
-    hash.update(await readFile(file));
+    const bytes = await readFile(file);
+    hash.update(stableWebBytes(file, bytes));
     hash.update("\0");
   }
   return hash.digest("hex");

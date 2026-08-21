@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-ebdadbf58beec459",
-  "webBuild": "ebdadbf58beec4594542625548fc975fd8e84ed633def275910eacf45edb37a4",
-  "publishedAt": "2026-08-21T08:21:29.834Z",
+  "releaseId": "web-9b221e9727c6c3d9",
+  "webBuild": "9b221e9727c6c3d9f90fc1825e24e9b7b22f07d3d0f47853d6e12c5d708ac951",
+  "publishedAt": "2026-08-21T09:53:31.169Z",
   "notes": [
     "修复移动端待办编辑、更多菜单和详情状态操作",
     "重做头像与背景图片裁选并改为本机缓存",

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,6 +26,30 @@ assert.equal(manifest.schemaVersion, 1);
 assert.match(manifest.releaseId, /^web-[a-f0-9]{16}$/);
 assert.match(manifest.webBuild, /^[A-Fa-f0-9]{64}$/);
 assert.ok(Array.isArray(manifest.notes) && manifest.notes.length > 0);
+
+const textExtensions = new Set([".css", ".js", ".json", ".svg", ".ts", ".tsx", ".webmanifest"]);
+const webRoot = join(root, "clients/web");
+const webFiles = [];
+async function walkWeb(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const fullPath = join(directory, entry.name);
+    if (entry.isDirectory()) await walkWeb(fullPath);
+    else if (entry.isFile() && relative(webRoot, fullPath).replaceAll("\\", "/") !== "public/updates/latest.json") webFiles.push(fullPath);
+  }
+}
+await walkWeb(join(webRoot, "app"));
+await walkWeb(join(webRoot, "public"));
+for (const name of ["package.json", "package-lock.json", "vite.config.ts", "next.config.ts"]) webFiles.push(join(webRoot, name));
+const webHash = createHash("sha256");
+for (const file of webFiles.sort()) {
+  webHash.update(relative(webRoot, file).replaceAll("\\", "/"));
+  webHash.update("\0");
+  const bytes = await readFile(file);
+  webHash.update(textExtensions.has(extname(file).toLowerCase()) ? Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8") : bytes);
+  webHash.update("\0");
+}
+assert.equal(manifest.webBuild, webHash.digest("hex"));
+assert.equal(manifest.releaseId, `web-${manifest.webBuild.slice(0, 16)}`);
 
 for (const platform of ["windows", "android"]) {
   const release = manifest.clients[platform];
