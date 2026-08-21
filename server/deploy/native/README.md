@@ -32,7 +32,10 @@
    sudo /opt/jishi/server/deploy/native/install-release.sh latest.json Jishi-Windows-Setup-<version>.exe Jishi-Android-<version>.apk
    ```
 
-6. 部署 Web/Server 源码，运行 `npm ci`、`npm run build`，安装本目录的 systemd/Nginx 配置，然后重启 `jishi-api`、`jishi-web` 并重载 Nginx。
+6. 部署 Web/Server 源码，运行 `npm ci`、`npm run build`，验证 workspace 提升后的根目录 `node_modules/.bin/wrangler` 和 `node_modules/.bin/vinext` 可执行，再安装本目录的 systemd 配置并重启 `jishi-api`、`jishi-web`。
+7. 普通发布保留生产 `/etc/nginx/sites-available/jishi`，因为其中包含 Certbot 管理的 443 回源配置；不要用仓库初始化模板覆盖。只有明确修改 Nginx 时才合并生产专用段，执行 `nginx -t` 后重载。
+
+生产 API 运行期间，不要并发执行指向 `/var/lib/jishi` 的第二个 `wrangler d1 execute`。在线数据核验使用 SQLite 只读连接，迁移由 `jishi-api.service` 的 `ExecStartPre` 单实例执行。
 
 ## 验证
 

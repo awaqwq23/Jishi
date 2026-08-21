@@ -26,6 +26,7 @@
 - 只修改远程 Web/Server 时，可以维持 Windows/Android 安装包版本，但必须重新生成并发布 Web `releaseId`/`webBuild`，让已安装客户端刷新。
 - 修改 Electron/Capacitor 原生壳、主机解析、离线页或本地权限时，必须提升对应客户端版本和构建号，重建安装包，并同步所有版本标记、文件名、SHA256、大小和更新清单。
 - 发布前运行 `npm run check:updates`，确认更新清单、安装包、客户端标记和主机配置一致。
+- Web `webBuild` 必须使用跨平台稳定算法计算；文本文件在哈希前统一为 LF。发布前必须在 Windows 工作区和 Linux 暂存目录分别重算并得到相同结果。
 - 不得用新安装包强迫解决本可由向后兼容 Server/Web 修复的问题。
 
 ## 生产秘密文件：强制规则
@@ -54,15 +55,18 @@
 - Android：涉及原生壳时构建 APK，验证远程主站、备用站和离线错误页。
 - 运行 `npm audit --audit-level=high`；高危或严重问题不得发布。
 - 对登录、bootstrap、待办旧接口和新模块接口做契约检查；无效登录必须返回 JSON 401，绝不能返回 HTML 500。
+- `jishi-api` 运行时禁止再启动 `wrangler d1 execute --local --persist-to /var/lib/jishi` 等第二个 Wrangler 进程访问同一持久化目录；在线只读核验使用 SQLite 只读连接，写入/迁移操作必须由 systemd 的单一 API 实例执行或先停服务。
 
 ## 生产部署流程
 
 1. 从干净提交生成发布内容，先在服务器独立暂存目录完成 Linux 依赖安装、迁移、Server dry-run、Web lint/构建/测试。
+   - `npm ci` 使用 workspace 提升依赖时，必须验证 systemd 单元引用的 `/opt/jishi/node_modules/.bin/wrangler` 和 `/opt/jishi/node_modules/.bin/vinext` 在暂存目录对应位置真实存在且可执行，不能只依赖 `npm run` 的 PATH。
 2. 部署前只读检查生产服务、磁盘、目标路径、符号链接、秘密文件和数据库状态。
 3. 备份 `/opt/jishi`、`/var/lib/jishi`、更新清单和生产秘密配置；记录可恢复的绝对路径。新备份必须代表本次部署前的完整生产版本。
 4. 向用户列出将执行的准确生产命令、备份、短暂停机和回滚行为，并取得最终明确确认。
 5. 停止服务后同步时保护所有秘密文件和运行数据；启动 API 前再次执行秘密文件门禁。
 6. 先启动 API 并应用迁移，再启动 Web，最后验证并重载 Nginx。失败时使用部署前备份回滚。
+   - 普通 Web/Server 发布不得用仓库模板覆盖生产 `/etc/nginx/sites-available/jishi`。生产文件包含 Certbot 管理的 HTTPS 回源段；只有任务明确修改 Nginx 时，才可在合并生产专用段、备份、比较哈希并通过 `nginx -t` 后替换。
 7. 部署后必须验证：
 
    - `jishi-api`、`jishi-web`、`nginx` 为 `active`；
