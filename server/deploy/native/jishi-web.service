@@ -10,7 +10,7 @@ Group=awaqwq233
 WorkingDirectory=/opt/jishi/clients/web
 Environment=NODE_ENV=production
 Environment=NODE_OPTIONS=--max-old-space-size=192
-ExecStart=/opt/jishi/clients/web/node_modules/.bin/vinext start --hostname 127.0.0.1 --port 3000
+ExecStart=/opt/jishi/node_modules/.bin/vinext start --hostname 127.0.0.1 --port 3000
 ExecStartPost=/opt/jishi/server/deploy/native/mark-deployment.sh
 Restart=on-failure
 RestartSec=4
