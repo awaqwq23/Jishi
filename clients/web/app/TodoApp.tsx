@@ -36,6 +36,12 @@ type DeviceLogin = { rememberAccount: boolean; rememberPassword: boolean; autoLo
 
 const DEVICE_LOGIN_KEY = "jishi-device-login-v1";
 const NOTIFICATION_KEY = "jishi-notifications-enabled";
+const NOTIFICATION_HISTORY_KEY = "jishi-notification-history-v1";
+const APPEARANCE_KEY_PREFIX = "jishi-local-appearance-v1:";
+const LOCAL_MEDIA_DB = "jishi-local-media-v1";
+const LOCAL_MEDIA_STORE = "backgrounds";
+
+type NativeBridge = { notify: (title: string, body: string, key: string) => void };
 
 const priorityMeta: Record<Priority, { label: string; hint: string }> = {
   low: { label: "不重要", hint: "慢慢来" },
@@ -46,6 +52,46 @@ const priorityMeta: Record<Priority, { label: string; hint: string }> = {
 const defaultSettings: SettingsShape = { theme: "linen", accent: "#d96f4b", cardOpacity: 92, acrylic: true, backgroundOpacity: 72, backgroundAcrylic: false };
 const defaultDeviceLogin: DeviceLogin = { rememberAccount: false, rememberPassword: false, autoLogin: false, email: "", password: "" };
 
+function normalizedAppearance(value?: Partial<SettingsShape>): SettingsShape {
+  const theme = new Set(["linen", "sage", "night"]).has(String(value?.theme)) ? value?.theme as SettingsShape["theme"] : defaultSettings.theme;
+  const accent = /^#[0-9a-f]{6}$/i.test(String(value?.accent || "")) ? String(value?.accent) : defaultSettings.accent;
+  const rawCardOpacity = Number(value?.cardOpacity ?? defaultSettings.cardOpacity); const cardOpacity = Number.isFinite(rawCardOpacity) ? Math.max(15, Math.min(100, rawCardOpacity)) : defaultSettings.cardOpacity;
+  const rawBackgroundOpacity = Number(value?.backgroundOpacity ?? defaultSettings.backgroundOpacity); const backgroundOpacity = Number.isFinite(rawBackgroundOpacity) ? Math.max(15, Math.min(100, rawBackgroundOpacity)) : defaultSettings.backgroundOpacity;
+  return { theme, accent, cardOpacity, acrylic: value?.acrylic !== false, backgroundOpacity, backgroundAcrylic: value?.backgroundAcrylic === true };
+}
+
+function readLocalAppearance(userId: string, legacy?: Partial<SettingsShape>) {
+  if (typeof window === "undefined") return normalizedAppearance(legacy);
+  try { return normalizedAppearance({ ...legacy, ...JSON.parse(localStorage.getItem(`${APPEARANCE_KEY_PREFIX}${userId}`) || "{}"), backgroundUrl: undefined }); }
+  catch { return normalizedAppearance(legacy); }
+}
+
+function writeLocalAppearance(userId: string, value: SettingsShape) {
+  localStorage.setItem(`${APPEARANCE_KEY_PREFIX}${userId}`, JSON.stringify(normalizedAppearance(value)));
+}
+
+function openLocalMediaDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    if (!("indexedDB" in window)) { reject(new Error("当前设备不支持本地图片缓存")); return; }
+    const request = indexedDB.open(LOCAL_MEDIA_DB, 1);
+    request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(LOCAL_MEDIA_STORE)) request.result.createObjectStore(LOCAL_MEDIA_STORE); };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("无法打开本地图片缓存"));
+  });
+}
+
+async function readLocalBackground(userId: string) {
+  const db = await openLocalMediaDb();
+  try { return await new Promise<Blob | null>((resolve, reject) => { const request = db.transaction(LOCAL_MEDIA_STORE).objectStore(LOCAL_MEDIA_STORE).get(userId); request.onsuccess = () => resolve(request.result instanceof Blob ? request.result : null); request.onerror = () => reject(request.error); }); }
+  finally { db.close(); }
+}
+
+async function writeLocalBackground(userId: string, file: Blob | null) {
+  const db = await openLocalMediaDb();
+  try { await new Promise<void>((resolve, reject) => { const transaction = db.transaction(LOCAL_MEDIA_STORE, "readwrite"); const store = transaction.objectStore(LOCAL_MEDIA_STORE); if (file) store.put(file, userId); else store.delete(userId); transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); }); }
+  finally { db.close(); }
+}
+
 function readDeviceLogin(): DeviceLogin {
   if (typeof window === "undefined") return defaultDeviceLogin;
   try { return { ...defaultDeviceLogin, ...JSON.parse(localStorage.getItem(DEVICE_LOGIN_KEY) || "{}") }; }
@@ -55,10 +101,31 @@ function writeDeviceLogin(value: DeviceLogin) {
   localStorage.setItem(DEVICE_LOGIN_KEY, JSON.stringify(value));
 }
 function notificationsSupported() {
-  return typeof window !== "undefined" && "Notification" in window;
+  if (typeof window === "undefined") return false;
+  return !!(window as Window & { JishiNative?: NativeBridge }).JishiNative || "Notification" in window;
 }
 function readNotificationsEnabled() {
   return typeof window !== "undefined" && localStorage.getItem(NOTIFICATION_KEY) === "true";
+}
+function readNotificationHistory() {
+  if (typeof window === "undefined") return new Set<string>();
+  try { const entries = JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY) || "[]"); return new Set<string>(Array.isArray(entries) ? entries.filter((item) => typeof item === "string").slice(-300) : []); }
+  catch { return new Set<string>(); }
+}
+function writeNotificationHistory(history: Set<string>) {
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify([...history].slice(-300)));
+}
+async function showDeviceNotification(title: string, body: string, key: string) {
+  const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
+  if (native) { native.notify(title, body, key); return; }
+  if (!("Notification" in window) || Notification.permission !== "granted") throw new Error("通知权限尚未开启");
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration?.active && "showNotification" in registration) { await registration.showNotification(title, { body, icon: withRuntimeBase("/favicon.svg"), tag: key }); return; }
+    } catch { /* A browser notification below is still available when the worker is not ready. */ }
+  }
+  new Notification(title, { body, icon: withRuntimeBase("/favicon.svg"), tag: key });
 }
 function formatOffsets(offsets: number[]) {
   return offsets.map((minutes) => {
@@ -136,7 +203,47 @@ function ImageCropper({ file, kind, onCancel, onConfirm }: {
   const [positionY, setPositionY] = useState(50);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [dragging, setDragging] = useState(false);
+  const activePointers = useRef(new Map<number, { x: number; y: number }>());
+  const panStart = useRef<{ x: number; y: number; positionX: number; positionY: number } | null>(null);
+  const pinchStart = useRef<{ distance: number; zoom: number } | null>(null);
   const aspect = kind === "avatar" ? 1 : 16 / 9;
+  const previewGeometry = useMemo(() => {
+    if (!dimensions.width || !dimensions.height) return { width: 100, height: 100, left: 0, top: 0 };
+    const naturalAspect = dimensions.width / dimensions.height;
+    const width = naturalAspect <= aspect ? naturalAspect / aspect * 100 : 100;
+    const height = naturalAspect > aspect ? aspect / naturalAspect * 100 : 100;
+    const scaledWidth = width * zoom; const scaledHeight = height * zoom;
+    return { width: scaledWidth, height: scaledHeight, left: (100 - scaledWidth) * positionX / 100, top: (100 - scaledHeight) * positionY / 100 };
+  }, [aspect, dimensions, positionX, positionY, zoom]);
+  const coverZoom = useMemo(() => {
+    if (!dimensions.width || !dimensions.height) return 1;
+    const naturalAspect = dimensions.width / dimensions.height;
+    return Math.min(4, Math.max(naturalAspect / aspect, aspect / naturalAspect));
+  }, [aspect, dimensions]);
+
+  const pointerDistance = () => { const points = [...activePointers.current.values()]; return points.length < 2 ? 0 : Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y); };
+  const beginImageMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId); activePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (activePointers.current.size === 1) { panStart.current = { x: event.clientX, y: event.clientY, positionX, positionY }; setDragging(true); }
+    else { pinchStart.current = { distance: pointerDistance(), zoom }; panStart.current = null; setDragging(false); }
+  };
+  const moveImage = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!activePointers.current.has(event.pointerId)) return;
+    activePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (activePointers.current.size >= 2 && pinchStart.current?.distance) { setZoom(Math.max(1, Math.min(4, pinchStart.current.zoom * pointerDistance() / pinchStart.current.distance))); return; }
+    if (!panStart.current) return;
+    const rect = event.currentTarget.getBoundingClientRect(); const gapX = 100 - previewGeometry.width; const gapY = 100 - previewGeometry.height;
+    if (Math.abs(gapX) > .01) setPositionX(Math.max(0, Math.min(100, panStart.current.positionX + (event.clientX - panStart.current.x) / rect.width * 10_000 / gapX)));
+    if (Math.abs(gapY) > .01) setPositionY(Math.max(0, Math.min(100, panStart.current.positionY + (event.clientY - panStart.current.y) / rect.height * 10_000 / gapY)));
+  };
+  const endImageMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    activePointers.current.delete(event.pointerId); pinchStart.current = null;
+    const remaining = [...activePointers.current.values()][0];
+    panStart.current = remaining ? { x: remaining.x, y: remaining.y, positionX, positionY } : null; setDragging(!!remaining);
+  };
+  const setImageMode = (mode: "full" | "cover" | "center") => { if (mode !== "center") setZoom(mode === "cover" ? coverZoom : 1); setPositionX(50); setPositionY(50); };
 
   useEffect(() => {
     return () => URL.revokeObjectURL(source);
@@ -147,17 +254,18 @@ function ImageCropper({ file, kind, onCancel, onConfirm }: {
     if (!image?.naturalWidth || !image.naturalHeight) return;
     setBusy(true); setError("");
     try {
-      const naturalAspect = image.naturalWidth / image.naturalHeight;
-      let cropWidth = naturalAspect > aspect ? image.naturalHeight * aspect : image.naturalWidth;
-      let cropHeight = naturalAspect > aspect ? image.naturalHeight : image.naturalWidth / aspect;
-      cropWidth /= zoom; cropHeight /= zoom;
-      const sourceX = (image.naturalWidth - cropWidth) * positionX / 100;
-      const sourceY = (image.naturalHeight - cropHeight) * positionY / 100;
       const outputWidth = kind === "avatar" ? 512 : 1600;
       const outputHeight = Math.round(outputWidth / aspect);
       const canvas = document.createElement("canvas");
       canvas.width = outputWidth; canvas.height = outputHeight;
-      canvas.getContext("2d")?.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("当前设备无法处理这张图片");
+      const baseScale = Math.min(outputWidth / image.naturalWidth, outputHeight / image.naturalHeight);
+      const drawWidth = image.naturalWidth * baseScale * zoom;
+      const drawHeight = image.naturalHeight * baseScale * zoom;
+      const drawX = (outputWidth - drawWidth) * positionX / 100;
+      const drawY = (outputHeight - drawHeight) * positionY / 100;
+      context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", .9));
       if (!blob) throw new Error("图片裁选失败，请换一张图片重试");
       await onConfirm(new File([blob], `${file.name.replace(/\.[^.]+$/, "")}-cropped.webp`, { type: "image/webp" }));
@@ -166,20 +274,23 @@ function ImageCropper({ file, kind, onCancel, onConfirm }: {
 
   return <div className="modal-layer crop-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
     <section className="crop-panel" role="dialog" aria-modal="true" aria-labelledby="crop-title">
-      <header className="editor-head"><div><span className="eyebrow">上传前预览</span><h2 id="crop-title">裁选{kind === "avatar" ? "头像" : "背景图片"}</h2></div><button className="icon-button" disabled={busy} onClick={onCancel} aria-label="关闭裁选"><X size={21} /></button></header>
-      <div className={`crop-viewport ${kind}`} style={{ "--crop-x": `${positionX}%`, "--crop-y": `${positionY}%`, "--crop-zoom": zoom } as React.CSSProperties}>
-        {/* Local object URLs must stay unoptimized so cropping uses the original pixels. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {source && <img ref={imageRef} src={source} alt="待裁选图片" />}
-        <span className="crop-grid" aria-hidden="true" />
+      <header className="editor-head"><div><span className="eyebrow">保存前预览</span><h2 id="crop-title">裁选{kind === "avatar" ? "头像" : "背景图片"}</h2></div><button className="icon-button" disabled={busy} onClick={onCancel} aria-label="关闭裁选"><X size={21} /></button></header>
+      <div className="crop-scroll">
+        <div className={`crop-viewport ${kind} ${dragging ? "dragging" : ""}`} onPointerDown={beginImageMove} onPointerMove={moveImage} onPointerUp={endImageMove} onPointerCancel={endImageMove} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(1, Math.min(4, value * (event.deltaY < 0 ? 1.08 : .92)))); }}>
+          {/* Local object URLs must stay unoptimized so cropping uses the original pixels. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {source && <img ref={imageRef} src={source} alt="待裁选图片" style={{ width: `${previewGeometry.width}%`, height: `${previewGeometry.height}%`, left: `${previewGeometry.left}%`, top: `${previewGeometry.top}%` }} onLoad={(event) => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />}
+          <span className="crop-grid" aria-hidden="true" />
+        </div>
+        <div className="crop-controls">
+          <small className="crop-resolution">原图 {dimensions.width || "—"} × {dimensions.height || "—"} 像素 · 固定输出 {kind === "avatar" ? "1:1" : "16:9"}，保持原始比例</small>
+          <div className="crop-presets"><button type="button" className="button secondary compact" onClick={() => setImageMode("full")}>完整显示</button><button type="button" className="button secondary compact" onClick={() => setImageMode("cover")}>填满裁剪框</button><button type="button" className="button secondary compact" onClick={() => setImageMode("center")}>居中</button></div>
+          <label><span><Crop size={16} />缩放</span><input type="range" min="1" max="4" step="0.01" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
+          <small className="crop-gesture-hint">直接拖动图片调整位置；电脑可滚动鼠标滚轮缩放，手机可双指缩放。</small>
+          {error && <p className="background-error" role="alert">{error}</p>}
+        </div>
       </div>
-      <div className="crop-controls">
-        <label><span><Crop size={16} />缩放</span><input type="range" min="1" max="3" step="0.05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
-        <label><span>水平位置</span><input type="range" min="0" max="100" value={positionX} onChange={(event) => setPositionX(Number(event.target.value))} /></label>
-        <label><span>垂直位置</span><input type="range" min="0" max="100" value={positionY} onChange={(event) => setPositionY(Number(event.target.value))} /></label>
-        {error && <p className="background-error" role="alert">{error}</p>}
-      </div>
-      <footer className="editor-actions"><button className="button secondary" disabled={busy} onClick={onCancel}>取消</button><button className="button primary" disabled={busy || !source} onClick={() => void confirm()}>{busy ? "正在上传…" : "确认裁选并上传"}</button></footer>
+      <footer className="editor-actions"><button className="button secondary" disabled={busy} onClick={onCancel}>取消</button><button className="button primary" disabled={busy || !source} onClick={() => void confirm()}>{busy ? "正在保存…" : kind === "avatar" ? "确认裁选并上传" : "确认并保存到本机"}</button></footer>
     </section>
   </div>;
 }
@@ -189,50 +300,64 @@ function EmptyState({ kind }: { kind: "active" | "completed" | "deleted" }) {
   return <div className="empty-state"><span className="empty-mark"><Sparkles size={24} /></span><h3>{copy[0]}</h3><p>{copy[1]}</p></div>;
 }
 
-function SwipeTask({ todo, category, onOpen, onStatus, cardOpacity, acrylic }: {
-  todo: Todo; category?: Category; onOpen: () => void; onStatus: (status: TodoStatus) => void;
+function SwipeTask({ todo, category, onOpen, onEdit, onStatus, cardOpacity, acrylic }: {
+  todo: Todo; category?: Category; onOpen: () => void; onEdit: () => void; onStatus: (status: TodoStatus) => void;
   cardOpacity: number; acrylic: boolean;
 }) {
   const [drag, setDrag] = useState(0);
-  const start = useRef<{ x: number; width: number } | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const start = useRef<{ x: number; width: number; captured: boolean } | null>(null);
+  const dragValue = useRef(0);
+  const suppressClick = useRef(false);
   // The current clock is intentionally sampled for live overdue styling.
   // eslint-disable-next-line react-hooks/purity
   const isOverdue = todo.status === "active" && !!todo.deadline && new Date(todo.deadline).getTime() < Date.now();
   const begin = (event: React.PointerEvent<HTMLDivElement>) => {
     if (todo.status !== "active") return;
-    start.current = { x: event.clientX, width: event.currentTarget.offsetWidth };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    start.current = { x: event.clientX, width: event.currentTarget.offsetWidth, captured: false };
   };
   const move = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!start.current) return;
-    setDrag(Math.max(-start.current.width * .58, Math.min(start.current.width * .58, event.clientX - start.current.x)));
+    const distance = event.clientX - start.current.x;
+    if (Math.abs(distance) < 6 && !start.current.captured) return;
+    if (!start.current.captured) { event.currentTarget.setPointerCapture(event.pointerId); start.current.captured = true; setMenuOpen(false); }
+    const next = Math.max(-start.current.width * .58, Math.min(start.current.width * .58, distance));
+    dragValue.current = next; setDrag(next);
   };
   const end = () => {
     if (!start.current) return;
     const threshold = start.current.width * .5;
-    if (drag <= -threshold) onStatus("completed");
-    else if (drag >= threshold) onStatus("deleted");
-    setDrag(0); start.current = null;
+    const distance = dragValue.current; suppressClick.current = Math.abs(distance) > 6;
+    if (distance <= -threshold) onStatus("completed");
+    else if (distance >= threshold) onStatus("deleted");
+    dragValue.current = 0; setDrag(0); start.current = null;
   };
-  return <div className={`swipe-shell ${drag !== 0 ? "swiping" : ""}`}>
+  const cancel = () => { suppressClick.current = Math.abs(dragValue.current) > 6; dragValue.current = 0; setDrag(0); start.current = null; };
+  return <div className={`swipe-shell ${drag !== 0 ? "swiping" : ""} ${menuOpen ? "menu-open" : ""}`}>
     <div className="swipe-action delete-action" style={{ width: Math.max(0, drag) }}><Trash2 size={21} /><span>移入回收站</span></div>
     <div className="swipe-action complete-action" style={{ width: Math.max(0, -drag) }}><Check size={22} /><span>标为完成</span></div>
-    <button type="button"
+    <div role="button" tabIndex={0}
       className={`task-card priority-${todo.priority} ${isOverdue ? "overdue" : ""} ${acrylic ? "acrylic" : ""}`}
       style={{ transform: `translateX(${drag}px)`, "--card-opacity": cardOpacity / 100 } as React.CSSProperties}
-      onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end}
-      onClick={() => Math.abs(drag) < 4 && onOpen()}
+      onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel}
+      onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } if (!menuOpen) onOpen(); }}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}
     >
       <div className="task-card-top">
         <div className="task-title-row"><span className="priority-dot" /><h3>{todo.title}</h3></div>
-        <span className="icon-button quiet" aria-hidden="true"><MoreHorizontal size={20} /></span>
+        <button type="button" className="icon-button quiet task-more" aria-label={`打开“${todo.title}”操作菜单`} aria-expanded={menuOpen} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setMenuOpen((value) => !value); }}><MoreHorizontal size={20} /></button>
+        {menuOpen && <div className="task-action-menu" role="menu" tabIndex={-1} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+          {todo.status !== "deleted" && <button role="menuitem" onClick={() => { setMenuOpen(false); onEdit(); }}><Pencil size={15} />编辑</button>}
+          {todo.status !== "deleted" && <button role="menuitem" onClick={() => { setMenuOpen(false); onStatus(todo.status === "completed" ? "active" : "completed"); }}><Check size={15} />{todo.status === "completed" ? "改为未完成" : "标记完成"}</button>}
+          <button role="menuitem" className={todo.status === "deleted" ? "" : "danger-quiet"} onClick={() => { setMenuOpen(false); onStatus(todo.status === "deleted" ? "active" : "deleted"); }}>{todo.status === "deleted" ? <RotateCcw size={15} /> : <Trash2 size={15} />}{todo.status === "deleted" ? "恢复" : "移入回收站"}</button>
+        </div>}
       </div>
       {todo.content && <p className="task-preview">{todo.content}</p>}
       <div className="task-meta">
         <span className="category-pill" style={{ "--category-color": category?.color || "#9e8d74" } as React.CSSProperties}>{category?.name || "默认"}</span>
         <span className={isOverdue ? "deadline-overdue" : ""}><Clock3 size={14} />{isOverdue ? "已逾期 · " : ""}{dateTime(todo.deadline)}</span>
       </div>
-    </button>
+    </div>
   </div>;
 }
 
@@ -299,20 +424,35 @@ function ScheduleEditor({ kind, initial, saving, onClose, onSave }: { kind: Sche
 }
 
 function ScheduleCard({ item, completed, onOpen, onComplete, onDelete, onRestore, onDeleteForever, cardOpacity, acrylic }: { item: ScheduleItem; completed: boolean; onOpen: () => void; onComplete: () => void; onDelete: () => void; onRestore: () => void; onDeleteForever: () => void; cardOpacity: number; acrylic: boolean }) {
-  const [drag, setDrag] = useState(0); const start = useRef<{ x: number; width: number } | null>(null);
-  const begin = (event: React.PointerEvent<HTMLDivElement>) => { if (item.status === "deleted") return; start.current = { x: event.clientX, width: event.currentTarget.offsetWidth }; event.currentTarget.setPointerCapture(event.pointerId); };
-  const move = (event: React.PointerEvent<HTMLDivElement>) => { if (start.current) setDrag(Math.max(-start.current.width * .58, Math.min(start.current.width * .58, event.clientX - start.current.x))); };
-  const end = () => { if (!start.current) return; const threshold = start.current.width * .5; if (drag <= -threshold) onComplete(); else if (drag >= threshold) onDelete(); setDrag(0); start.current = null; };
-  return <div className={`swipe-shell schedule-shell ${drag !== 0 ? "swiping" : ""}`}><div className="swipe-action delete-action" style={{ width: Math.max(0, drag) }}><Trash2 size={21} /><span>移入回收站</span></div><div className="swipe-action complete-action" style={{ width: Math.max(0, -drag) }}><Check size={22} /><span>{completed ? "改为未做到" : item.kind === "habit" ? "标记做到" : "标记完成"}</span></div><div role="button" tabIndex={0} className={`task-card schedule-card ${completed ? "schedule-completed" : ""} ${acrylic ? "acrylic" : ""}`} style={{ transform: `translateX(${drag}px)`, "--card-opacity": cardOpacity / 100 } as React.CSSProperties} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onClick={() => Math.abs(drag) < 4 && onOpen()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><div className="task-card-top"><div className="task-title-row">{completed ? <Check size={17} /> : item.kind === "routine" ? <CalendarDays size={17} /> : <Repeat2 size={17} />}<h3>{item.title}</h3></div><span className={`status-badge ${item.status === "deleted" ? "status-deleted" : completed ? "status-completed" : "status-active"}`}>{item.status === "deleted" ? "回收站" : completed ? item.kind === "habit" ? "已做到" : "已完成" : item.kind === "habit" ? "未做到" : "未完成"}</span></div>{item.notes && <p className="task-preview">{item.notes}</p>}<div className="task-meta"><span>{recurrenceLabel(item)}</span>{item.kind === "routine" && <span><Clock3 size={14} />{item.timeOfDay}</span>}</div>{item.status === "deleted" && <span className="schedule-card-actions"><button type="button" className="text-button" onClick={(event) => { event.stopPropagation(); onRestore(); }}><RotateCcw size={14} />恢复</button><button type="button" className="text-button danger-quiet" onClick={(event) => { event.stopPropagation(); onDeleteForever(); }}><Trash2 size={14} />永久删除</button></span>}</div></div>;
+  const [drag, setDrag] = useState(0); const start = useRef<{ x: number; width: number; captured: boolean } | null>(null); const dragValue = useRef(0); const suppressClick = useRef(false);
+  const begin = (event: React.PointerEvent<HTMLDivElement>) => { if (item.status === "deleted") return; start.current = { x: event.clientX, width: event.currentTarget.offsetWidth, captured: false }; };
+  const move = (event: React.PointerEvent<HTMLDivElement>) => { if (!start.current) return; const distance = event.clientX - start.current.x; if (Math.abs(distance) < 6 && !start.current.captured) return; if (!start.current.captured) { event.currentTarget.setPointerCapture(event.pointerId); start.current.captured = true; } const next = Math.max(-start.current.width * .58, Math.min(start.current.width * .58, distance)); dragValue.current = next; setDrag(next); };
+  const end = () => { if (!start.current) return; const threshold = start.current.width * .5; const distance = dragValue.current; suppressClick.current = Math.abs(distance) > 6; if (distance <= -threshold) onComplete(); else if (distance >= threshold) onDelete(); dragValue.current = 0; setDrag(0); start.current = null; };
+  const cancel = () => { suppressClick.current = Math.abs(dragValue.current) > 6; dragValue.current = 0; setDrag(0); start.current = null; };
+  return <div className={`swipe-shell schedule-shell ${drag !== 0 ? "swiping" : ""}`}><div className="swipe-action delete-action" style={{ width: Math.max(0, drag) }}><Trash2 size={21} /><span>移入回收站</span></div><div className="swipe-action complete-action" style={{ width: Math.max(0, -drag) }}><Check size={22} /><span>{completed ? "改为未做到" : item.kind === "habit" ? "标记做到" : "标记完成"}</span></div><div role="button" tabIndex={0} className={`task-card schedule-card ${completed ? "schedule-completed" : ""} ${acrylic ? "acrylic" : ""}`} style={{ transform: `translateX(${drag}px)`, "--card-opacity": cardOpacity / 100 } as React.CSSProperties} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onOpen(); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><div className="task-card-top"><div className="task-title-row">{completed ? <Check size={17} /> : item.kind === "routine" ? <CalendarDays size={17} /> : <Repeat2 size={17} />}<h3>{item.title}</h3></div><span className={`status-badge ${item.status === "deleted" ? "status-deleted" : completed ? "status-completed" : "status-active"}`}>{item.status === "deleted" ? "回收站" : completed ? item.kind === "habit" ? "已做到" : "已完成" : item.kind === "habit" ? "未做到" : "未完成"}</span></div>{item.notes && <p className="task-preview">{item.notes}</p>}<div className="task-meta"><span>{recurrenceLabel(item)}</span>{item.kind === "routine" && <span><Clock3 size={14} />{item.timeOfDay}</span>}</div>{item.status === "deleted" && <span className="schedule-card-actions"><button type="button" className="text-button" onClick={(event) => { event.stopPropagation(); onRestore(); }}><RotateCcw size={14} />恢复</button><button type="button" className="text-button danger-quiet" onClick={(event) => { event.stopPropagation(); onDeleteForever(); }}><Trash2 size={14} />永久删除</button></span>}</div></div>;
+}
+
+function ScheduleDetailPanel({ item, date, completed, onClose, onEdit, onComplete, onDelete, onRestore, onDeleteForever }: { item: ScheduleItem; date: string; completed: boolean; onClose: () => void; onEdit: () => void; onComplete: () => void; onDelete: () => void; onRestore: () => void; onDeleteForever: () => void }) {
+  const completedLabel = item.kind === "habit" ? "已做到" : "已完成";
+  const pendingLabel = item.kind === "habit" ? "未做到" : "未完成";
+  return <div className="detail-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="detail-panel" role="dialog" aria-modal="true" aria-label={`${item.kind === "habit" ? "习惯" : "定期任务"}详情`}>
+    <div className="detail-handle" />
+    <header className="detail-head"><span className={`status-badge ${item.status === "deleted" ? "status-deleted" : completed ? "status-completed" : "status-active"}`}>{item.status === "deleted" ? "回收站" : completed ? completedLabel : pendingLabel}</span><button className="icon-button" onClick={onClose} aria-label="关闭详情"><X size={20} /></button></header>
+    <div className="detail-body"><h2>{item.title}</h2>{item.notes ? <p className="detail-content">{item.notes}</p> : <p className="detail-muted">没有补充说明</p>}
+      <dl className="detail-list"><div><dt>查看日期</dt><dd>{date}</dd></div><div><dt>重复方式</dt><dd>{recurrenceLabel(item)}</dd></div>{item.kind === "routine" && <div><dt>提醒时间</dt><dd>{item.timeOfDay || "未设置"}</dd></div>}<div><dt>开始日期</dt><dd>{item.startDate}</dd></div><div><dt>创建时间</dt><dd>{fullDate(item.createdAt)}</dd></div>{item.deletedAt && <div><dt>删除时间</dt><dd>{fullDate(item.deletedAt)}</dd></div>}</dl>
+    </div>
+    <footer className="detail-actions schedule-detail-actions">{item.status === "deleted" ? <><button className="button secondary" onClick={onRestore}><RotateCcw size={17} />恢复</button><button className="button danger" onClick={onDeleteForever}><Trash2 size={17} />永久删除</button></> : <><button className="button secondary" onClick={onEdit}><Pencil size={17} />编辑</button><button className="button primary" onClick={onComplete}><Check size={17} />{completed ? `改为${pendingLabel}` : `标记${completedLabel}`}</button><button className="icon-button danger-quiet" onClick={onDelete} aria-label="移入回收站"><Trash2 size={19} /></button></>}</footer>
+  </aside></div>;
 }
 
 function ScheduleBoard({ kind, items, records, cardOpacity, acrylic, onCreate, onUpdate, onComplete, onDeleteForever }: { kind: ScheduleKind; items: ScheduleItem[]; records: ScheduleRecord[]; cardOpacity: number; acrylic: boolean; onCreate: (value: ScheduleEditorValue) => Promise<void>; onUpdate: (id: string, patch: Partial<ScheduleEditorValue> & { status?: "active" | "deleted" }) => Promise<void>; onComplete: (id: string, date: string, completed: boolean) => Promise<void>; onDeleteForever: (id: string) => Promise<void> }) {
-  const [date, setDate] = useState(localDateKey); const [filter, setFilter] = useState<"pending" | "completed" | "deleted">("pending"); const [editor, setEditor] = useState<"new" | ScheduleItem | null>(null); const [saving, setSaving] = useState(false);
+  const [date, setDate] = useState(localDateKey); const [filter, setFilter] = useState<"pending" | "completed" | "deleted">("pending"); const [editor, setEditor] = useState<"new" | ScheduleItem | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null); const [saving, setSaving] = useState(false);
   const recordIds = new Set(records.filter((record) => record.occurrenceDate === date).map((record) => record.itemId));
   const visible = items.filter((item) => item.kind === kind).filter((item) => filter === "deleted" ? item.status === "deleted" : item.status === "active" && occursOn(item, date) && (filter === "completed" ? recordIds.has(item.id) : !recordIds.has(item.id)));
+  const selected = items.find((item) => item.id === selectedId) || null;
   const save = async (value: ScheduleEditorValue) => { setSaving(true); try { if (editor && editor !== "new") await onUpdate(editor.id, value); else await onCreate(value); setEditor(null); } finally { setSaving(false); } };
   const noun = kind === "routine" ? "定期任务" : "习惯";
-  return <div className="module-page"><header className="topbar"><div><span className="eyebrow">{kind === "routine" ? "像闹钟一样按计划出现" : "把坚持留下来"}</span><h1>{noun}</h1></div><button className="button primary" onClick={() => setEditor("new")}><Plus size={18} />新建{noun}</button></header><div className="module-toolbar"><label><CalendarDays size={16} /><input aria-label="查看日期" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><div className="status-tabs compact-tabs"><button className={filter === "pending" ? "active" : ""} onClick={() => setFilter("pending")}>{kind === "habit" ? "未做到" : "未完成"}</button><button className={filter === "completed" ? "active" : ""} onClick={() => setFilter("completed")}>{kind === "habit" ? "已做到" : "已完成"}</button><button className={filter === "deleted" ? "active" : ""} onClick={() => setFilter("deleted")}>回收站</button></div></div><section className="task-list">{visible.length ? visible.map((item) => <ScheduleCard key={item.id} item={item} completed={recordIds.has(item.id)} cardOpacity={cardOpacity} acrylic={acrylic} onOpen={() => item.status === "active" && setEditor(item)} onComplete={() => void onComplete(item.id, date, !recordIds.has(item.id))} onDelete={() => void onUpdate(item.id, { status: "deleted" })} onRestore={() => void onUpdate(item.id, { status: "active" })} onDeleteForever={() => void onDeleteForever(item.id)} />) : <div className="empty-state"><span className="empty-mark">{kind === "routine" ? <CalendarDays size={24} /> : <Repeat2 size={24} />}</span><h3>这一天没有{filter === "completed" ? kind === "habit" ? "已做到的习惯" : "已完成的任务" : filter === "deleted" ? "回收站内容" : noun}</h3><p>可切换日期，或新建一项计划。</p></div>}</section>{editor && <ScheduleEditor kind={kind} initial={editor === "new" ? undefined : editor} saving={saving} onClose={() => setEditor(null)} onSave={(value) => void save(value)} />}</div>;
+  return <div className="module-page"><header className="topbar"><div><span className="eyebrow">{kind === "routine" ? "像闹钟一样按计划出现" : "把坚持留下来"}</span><h1>{noun}</h1></div><button className="button primary" onClick={() => setEditor("new")}><Plus size={18} />新建{noun}</button></header><div className="module-toolbar"><label><CalendarDays size={16} /><input aria-label="查看日期" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><div className="status-tabs compact-tabs"><button className={filter === "pending" ? "active" : ""} onClick={() => setFilter("pending")}>{kind === "habit" ? "未做到" : "未完成"}</button><button className={filter === "completed" ? "active" : ""} onClick={() => setFilter("completed")}>{kind === "habit" ? "已做到" : "已完成"}</button><button className={filter === "deleted" ? "active" : ""} onClick={() => setFilter("deleted")}>回收站</button></div></div><section className="task-list">{visible.length ? visible.map((item) => <ScheduleCard key={item.id} item={item} completed={recordIds.has(item.id)} cardOpacity={cardOpacity} acrylic={acrylic} onOpen={() => setSelectedId(item.id)} onComplete={() => void onComplete(item.id, date, !recordIds.has(item.id))} onDelete={() => void onUpdate(item.id, { status: "deleted" })} onRestore={() => void onUpdate(item.id, { status: "active" })} onDeleteForever={() => void onDeleteForever(item.id)} />) : <div className="empty-state"><span className="empty-mark">{kind === "routine" ? <CalendarDays size={24} /> : <Repeat2 size={24} />}</span><h3>这一天没有{filter === "completed" ? kind === "habit" ? "已做到的习惯" : "已完成的任务" : filter === "deleted" ? "回收站内容" : noun}</h3><p>可切换日期，或新建一项计划。</p></div>}</section>{selected && <ScheduleDetailPanel item={selected} date={date} completed={recordIds.has(selected.id)} onClose={() => setSelectedId(null)} onEdit={() => { setSelectedId(null); setEditor(selected); }} onComplete={() => void onComplete(selected.id, date, !recordIds.has(selected.id))} onDelete={() => void onUpdate(selected.id, { status: "deleted" }).then(() => setSelectedId(null))} onRestore={() => void onUpdate(selected.id, { status: "active" }).then(() => setSelectedId(null))} onDeleteForever={() => void onDeleteForever(selected.id).then(() => setSelectedId(null))} />}{editor && <ScheduleEditor kind={kind} initial={editor === "new" ? undefined : editor} saving={saving} onClose={() => setEditor(null)} onSave={(value) => void save(value)} />}</div>;
 }
 
 function DiaryEditor({ date, initialContent, onSave }: { date: string; initialContent: string; onSave: (date: string, content: string) => Promise<void> }) {
@@ -381,40 +521,69 @@ export default function TodoApp() {
   const [editor, setEditor] = useState<"new" | Todo | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false); const [notice, setNotice] = useState(""); const [error, setError] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationEnabled, setNotificationEnabled] = useState(readNotificationsEnabled);
-  const notificationHistory = useRef(new Set<string>());
+  const notificationHistory = useRef(readNotificationHistory());
+  const [localBackgroundUrl, setLocalBackgroundUrl] = useState<string | null>(null);
+  const backgroundObjectUrl = useRef<string | null>(null);
+
+  const replaceBackgroundObjectUrl = useCallback((blob: Blob | null) => {
+    if (backgroundObjectUrl.current) URL.revokeObjectURL(backgroundObjectUrl.current);
+    backgroundObjectUrl.current = blob ? URL.createObjectURL(blob) : null;
+    setLocalBackgroundUrl(backgroundObjectUrl.current);
+  }, []);
 
   const load = useCallback(async () => {
-    try { setError(""); setData(await api<Bootstrap>("/api/bootstrap")); }
+    try {
+      setError("");
+      const next = await api<Bootstrap>("/api/bootstrap");
+      setData({ ...next, user: { ...next.user, settings: readLocalAppearance(next.user.id, next.user.settings) } });
+    }
     catch (err) { setError(err instanceof Error ? err.message : "暂时无法同步数据"); }
   }, []);
   useEffect(() => { queueMicrotask(() => void load()); if ("serviceWorker" in navigator) void navigator.serviceWorker.register(withRuntimeBase("/sw.js")); }, [load]);
   useEffect(() => {
-    if (!data || !notificationEnabled || !notificationsSupported() || Notification.permission !== "granted") return;
+    const userId = data?.user.id; let cancelled = false;
+    if (!userId) { replaceBackgroundObjectUrl(null); return; }
+    void readLocalBackground(userId).then((blob) => { if (!cancelled) replaceBackgroundObjectUrl(blob); }).catch(() => { if (!cancelled) replaceBackgroundObjectUrl(null); });
+    return () => { cancelled = true; };
+  }, [data?.user.id, replaceBackgroundObjectUrl]);
+  useEffect(() => () => { if (backgroundObjectUrl.current) URL.revokeObjectURL(backgroundObjectUrl.current); }, []);
+  useEffect(() => {
+    const receiveNativePermission = (event: Event) => {
+      const granted = (event as CustomEvent<string>).detail === "granted";
+      localStorage.setItem(NOTIFICATION_KEY, String(granted)); setNotificationEnabled(granted);
+      if (!granted) { notificationHistory.current.clear(); writeNotificationHistory(notificationHistory.current); }
+      setNotice(granted ? "系统通知权限已开启" : "系统通知权限未开启，请在手机设置中允许记时发送通知");
+      window.setTimeout(() => setNotice(""), 2600);
+    };
+    window.addEventListener("jishi-native-notification-permission", receiveNativePermission);
+    return () => window.removeEventListener("jishi-native-notification-permission", receiveNativePermission);
+  }, []);
+  useEffect(() => {
+    const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
+    if (!data || !notificationEnabled || !notificationsSupported() || (!native && Notification.permission !== "granted")) return;
     const check = () => {
       const now = Date.now();
-      const sendOnce = (key: string, title: string, body: string) => { if (notificationHistory.current.has(key)) return; notificationHistory.current.add(key); new Notification(title, { body, icon: withRuntimeBase("/favicon.svg") }); };
+      const sendOnce = (key: string, title: string, body: string) => { if (notificationHistory.current.has(key)) return; notificationHistory.current.add(key); void showDeviceNotification(title, body, key).then(() => writeNotificationHistory(notificationHistory.current)).catch(() => notificationHistory.current.delete(key)); };
       data.todos.filter((todo) => todo.status === "active" && todo.deadline).forEach((todo) => {
         const deadline = new Date(todo.deadline!).getTime();
-        if (deadline < now && deadline > now - 2_000) sendOnce(`todo:${todo.id}:deadline`, `待办已逾期：${todo.title}`, "它还没有完成，点此回到记时。");
-        todo.reminderOffsets.forEach((minutes) => { const moment = deadline - minutes * 60_000; if (moment <= now && moment > now - 2_000) sendOnce(`todo:${todo.id}:${minutes}`, todo.title, `${dateTime(todo.deadline)} 截止`); });
+        if (!Number.isFinite(deadline)) return;
+        if (deadline <= now) { sendOnce(`todo:${todo.id}:deadline:${deadline}`, `待办已逾期：${todo.title}`, "它还没有完成，点此回到记时。"); return; }
+        const reachedOffset = todo.reminderOffsets.map((minutes) => ({ minutes, moment: deadline - minutes * 60_000 })).filter((entry) => entry.moment <= now).sort((a, b) => b.moment - a.moment)[0];
+        if (reachedOffset) sendOnce(`todo:${todo.id}:reminder:${reachedOffset.moment}`, todo.title, `${dateTime(todo.deadline)} 截止`);
       });
       const today = localDateKey(); const completedIds = new Set(data.scheduleRecords.filter((record) => record.occurrenceDate === today).map((record) => record.itemId));
       data.schedules.filter((item) => item.kind === "routine" && item.status === "active" && item.timeOfDay && occursOn(item, today) && !completedIds.has(item.id)).forEach((item) => {
-        const moment = new Date(`${today}T${item.timeOfDay}`).getTime(); if (moment <= now && moment > now - 2_000) sendOnce(`routine:${item.id}:${today}`, item.title, `定期任务时间：${item.timeOfDay}`);
+        const moment = new Date(`${today}T${item.timeOfDay}`).getTime(); if (moment <= now) sendOnce(`routine:${item.id}:${today}`, item.title, `定期任务时间：${item.timeOfDay}`);
       });
     };
-    check(); const timer = window.setInterval(check, 1_000); return () => window.clearInterval(timer);
+    const checkWhenVisible = () => { if (document.visibilityState === "visible") check(); };
+    check(); const timer = window.setInterval(check, 30_000); document.addEventListener("visibilitychange", checkWhenVisible); window.addEventListener("focus", check);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", checkWhenVisible); window.removeEventListener("focus", check); };
   }, [data, notificationEnabled]);
 
-  const settings = {
-    ...defaultSettings,
-    ...(data?.user.settings || {}),
-    cardOpacity: Math.max(15, Math.min(100, Number(data?.user.settings?.cardOpacity ?? defaultSettings.cardOpacity))),
-    backgroundOpacity: Math.max(15, Math.min(100, Number(data?.user.settings?.backgroundOpacity ?? defaultSettings.backgroundOpacity))),
-    acrylic: data?.user.settings?.acrylic !== false,
-    backgroundAcrylic: data?.user.settings?.backgroundAcrylic === true,
-  };
+  const settings: SettingsShape = { ...normalizedAppearance(data?.user.settings), backgroundUrl: localBackgroundUrl || undefined };
   useEffect(() => { document.documentElement.dataset.theme = settings.theme; }, [settings.theme]);
   const selected = data?.todos.find((todo) => todo.id === selectedId) || null;
   const visibleTodos = useMemo(() => {
@@ -441,10 +610,12 @@ export default function TodoApp() {
       flash("提醒已关闭：本设备不会再弹出待办通知"); return;
     }
     if (!notificationsSupported()) { flash("此设备暂不支持网页通知，待办仍会正常同步"); return; }
-    const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
+    const permission = native ? "granted" : Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
     if (permission === "granted") {
+      await showDeviceNotification("记时提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
       localStorage.setItem(NOTIFICATION_KEY, "true"); setNotificationEnabled(true);
-      flash("提醒已开启：页面运行时会按截止时间通知");
+      flash("提醒已开启，并已发送一条测试通知");
     } else flash("提醒未开启：请在系统设置中允许此应用发送通知");
   };
   const mutateTodo = async (id: string, patch: Record<string, unknown>) => {
@@ -493,23 +664,27 @@ export default function TodoApp() {
     const result = await api<{ entry: DiaryEntry }>(`/api/diary/${entryDate}`, { method: "PUT", body: JSON.stringify({ content }) });
     setData((old) => old ? ({ ...old, diaryEntries: [result.entry, ...old.diaryEntries.filter((entry) => entry.entryDate !== entryDate)].sort((a, b) => b.entryDate.localeCompare(a.entryDate)) }) : old);
   }, []);
-  const saveProfile = async (patch: { name?: string; settings?: SettingsShape; avatarUrl?: string }) => {
+  const saveProfile = async (patch: { name?: string; avatarUrl?: string }) => {
     if (!data) return;
     const result = await api<{ user: Profile }>("/api/profile", { method: "PATCH", body: JSON.stringify(patch) });
-    setData((old) => old ? ({ ...old, user: result.user }) : old); flash("设置已同步");
+    setData((old) => old ? ({ ...old, user: { ...result.user, settings: old.user.settings } }) : old); flash("账户资料已同步");
   };
-  const previewSettings = (next: SettingsShape) => setData((old) => old ? ({ ...old, user: { ...old.user, settings: next } }) : old);
+  const previewSettings = (next: SettingsShape) => setData((old) => old ? ({ ...old, user: { ...old.user, settings: normalizedAppearance(next) } }) : old);
+  const saveAppearance = async (next: SettingsShape) => {
+    if (!data) return;
+    const appearance = normalizedAppearance(next); writeLocalAppearance(data.user.id, appearance);
+    setData((old) => old ? ({ ...old, user: { ...old.user, settings: appearance } }) : old); flash("外观设置已保存在本机");
+  };
   const uploadImage = async (file: File, kind: "avatar" | "background") => {
-    const response = await fetch(apiUrl(`/api/media?kind=${kind}`), { method: "PUT", credentials: "include", headers: { "Content-Type": file.type }, body: file });
-    const result = await response.json(); if (!response.ok) throw new Error(result.error);
-    if (kind === "avatar") await saveProfile({ avatarUrl: result.url });
-    else await saveProfile({ settings: { ...settings, backgroundUrl: result.url } });
+    if (!data) return;
+    if (kind === "background") { await writeLocalBackground(data.user.id, file); replaceBackgroundObjectUrl(file); flash("背景图片已保存在本机"); return; }
+    const response = await fetch(apiUrl("/api/media?kind=avatar"), { method: "PUT", credentials: "include", headers: { "Content-Type": file.type }, body: file });
+    const result = await response.json(); if (!response.ok) throw new Error(result.error || "头像上传失败");
+    await saveProfile({ avatarUrl: result.url });
   };
   const removeBackground = async () => {
-    const response = await fetch(apiUrl("/api/media?kind=background"), { method: "DELETE", credentials: "include" });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || "移除背景失败");
-    await saveProfile({ settings: { ...settings, backgroundUrl: undefined } });
+    if (!data) return;
+    await writeLocalBackground(data.user.id, null); replaceBackgroundObjectUrl(null); flash("本机背景已移除");
   };
 
   if (!data && error.includes("登录")) return <AuthScreen onAuthenticated={load} />;
@@ -519,7 +694,7 @@ export default function TodoApp() {
   const presetMap = new Map(data.reminderPresets.map((item) => [item.id, item]));
   const activeCount = data.todos.filter((todo) => todo.status === "active").length;
   const todayLabel = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(new Date());
-  return <div className={`app-shell acrylic-${settings.acrylic} ${settings.backgroundUrl ? "has-custom-background" : ""} ${settings.backgroundAcrylic ? "background-acrylic" : ""}`} style={{ "--accent": settings.accent, "--card-opacity": settings.cardOpacity / 100, "--background-opacity": settings.backgroundOpacity / 100, "--background-overlay": (100 - settings.backgroundOpacity) / 100, "--app-background-image": settings.backgroundUrl ? `url(${withRuntimeBase(settings.backgroundUrl)})` : "none" } as React.CSSProperties}>
+  return <div className={`app-shell acrylic-${settings.acrylic} ${settings.backgroundUrl ? "has-custom-background" : ""} ${settings.backgroundAcrylic ? "background-acrylic" : ""}`} style={{ "--accent": settings.accent, "--card-opacity": settings.cardOpacity / 100, "--background-opacity": settings.backgroundOpacity / 100, "--background-overlay": (100 - settings.backgroundOpacity) / 100, "--app-background-image": settings.backgroundUrl ? `url(${settings.backgroundUrl})` : "none" } as React.CSSProperties}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark small">记</span><div><strong>记时</strong><small>把今天安放好</small></div></div>
       <nav className="side-nav" aria-label="主导航"><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "habits" ? "active" : ""} onClick={() => setSection("habits")}><Repeat2 size={19} /><span>习惯</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
@@ -529,16 +704,16 @@ export default function TodoApp() {
 
     <main className="main-surface">
       {(section === "todos" || section === "trash") && <>
-        <header className="topbar"><div><span className="eyebrow">{section === "trash" ? "30 天内可恢复" : todayLabel}</span><h1>{section === "trash" ? "回收站" : statusFilter === "active" ? "今天，先做什么？" : "完成记录"}</h1></div><div className="top-actions"><button className="icon-button mobile-menu" aria-label="菜单"><Menu size={21} /></button><button className={`button notification-button ${notificationEnabled ? "enabled" : ""}`} aria-pressed={notificationEnabled} title={notificationEnabled ? "关闭本设备的待办弹窗提醒" : "开启本设备的待办弹窗提醒"} onClick={() => void toggleNotifications()}><Bell size={18} /><span>{notificationEnabled ? "提醒已开" : "提醒已关"}</span></button>{section !== "trash" && <button className="button primary" onClick={() => setEditor("new")}><Plus size={19} />新建待办</button>}</div></header>
+        <header className="topbar"><div><span className="eyebrow">{section === "trash" ? "30 天内可恢复" : todayLabel}</span><h1>{section === "trash" ? "回收站" : statusFilter === "active" ? "今天，先做什么？" : "完成记录"}</h1></div><div className="top-actions"><button className="icon-button mobile-menu" aria-label="打开待办快捷菜单" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((value) => !value)}><Menu size={21} /></button>{mobileMenuOpen && <div className="mobile-quick-menu" role="menu"><button role="menuitem" onClick={() => { setSection("todos"); setStatusFilter("active"); setMobileMenuOpen(false); }}><LayoutList size={16} />未完成待办</button><button role="menuitem" onClick={() => { setSection("todos"); setStatusFilter("completed"); setMobileMenuOpen(false); }}><Check size={16} />已完成待办</button><button role="menuitem" onClick={() => { setSection("trash"); setMobileMenuOpen(false); }}><Trash2 size={16} />回收站</button><button role="menuitem" onClick={() => { setSection("settings"); setMobileMenuOpen(false); }}><Settings size={16} />设置</button></div>}<button className={`button notification-button ${notificationEnabled ? "enabled" : ""}`} aria-pressed={notificationEnabled} title={notificationEnabled ? "关闭本设备的消息栏提醒" : "开启本设备的消息栏提醒"} onClick={() => void toggleNotifications().catch((reason) => { setError(reason instanceof Error ? reason.message : "通知开启失败"); })}><Bell size={18} /><span>{notificationEnabled ? "提醒已开" : "提醒已关"}</span></button>{section !== "trash" && <button className="button primary" onClick={() => setEditor("new")}><Plus size={19} />新建待办</button>}</div></header>
         {section !== "trash" && <div className="status-tabs"><button className={statusFilter === "active" ? "active" : ""} onClick={() => setStatusFilter("active")}>未完成 <span>{activeCount}</span></button><button className={statusFilter === "completed" ? "active" : ""} onClick={() => setStatusFilter("completed")}>已完成 <span>{data.todos.filter((todo) => todo.status === "completed").length}</span></button></div>}
         <div className="filter-row"><label className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、内容或备注" /><kbd>⌘ K</kbd></label><button className={`filter-button ${filtersOpen ? "active" : ""}`} onClick={() => setFiltersOpen((value) => !value)}><SlidersHorizontal size={18} />筛选</button></div>
         {filtersOpen && <div className="filter-panel"><label><span>分类</span><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">全部分类</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label><span>重要程度</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="">全部程度</option>{Object.entries(priorityMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select></label><label><span>截止范围</span><select value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}><option value="all">全部时间</option><option value="today">今天截止</option><option value="week">7 天内</option><option value="overdue">已逾期</option></select></label><button className="text-button" onClick={() => { setCategoryFilter(""); setPriorityFilter(""); setDateFilter("all"); }}><RotateCcw size={15} />重置</button></div>}
-        <section className="task-list" aria-live="polite">{visibleTodos.length ? visibleTodos.map((todo) => <SwipeTask key={todo.id} todo={todo} category={todo.categoryId ? categoryMap.get(todo.categoryId) : undefined} onOpen={() => setSelectedId(todo.id)} onStatus={(status) => void mutateTodo(todo.id, { status })} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} />) : <EmptyState kind={section === "trash" ? "deleted" : statusFilter} />}</section>
+        <section className="task-list" aria-live="polite">{visibleTodos.length ? visibleTodos.map((todo) => <SwipeTask key={todo.id} todo={todo} category={todo.categoryId ? categoryMap.get(todo.categoryId) : undefined} onOpen={() => setSelectedId(todo.id)} onEdit={() => setEditor(todo)} onStatus={(status) => void mutateTodo(todo.id, { status })} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} />) : <EmptyState kind={section === "trash" ? "deleted" : statusFilter} />}</section>
       </>}
       {section === "routines" && <ScheduleBoard kind="routine" items={data.schedules} records={data.scheduleRecords} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} onCreate={createSchedule} onUpdate={updateSchedule} onComplete={completeSchedule} onDeleteForever={deleteScheduleForever} />}
       {section === "habits" && <ScheduleBoard kind="habit" items={data.schedules} records={data.scheduleRecords} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} onCreate={createSchedule} onUpdate={updateSchedule} onComplete={completeSchedule} onDeleteForever={deleteScheduleForever} />}
       {section === "diary" && <DiaryBoard entries={data.diaryEntries} onSave={saveDiary} />}
-      {(section === "mine" || section === "settings") && <ProfileSettings data={data} settings={settings} section={section} onSection={setSection} onSaveProfile={saveProfile} onPreviewSettings={previewSettings} onUpload={uploadImage} onRemoveBackground={removeBackground} onReload={load} setData={setData} flash={flash} />}
+      {(section === "mine" || section === "settings") && <ProfileSettings data={data} settings={settings} section={section} onSection={setSection} onSaveProfile={saveProfile} onSaveAppearance={saveAppearance} onPreviewSettings={previewSettings} onUpload={uploadImage} onRemoveBackground={removeBackground} onReload={load} setData={setData} flash={flash} />}
       {selected && <DetailPanel todo={selected} category={selected.categoryId ? categoryMap.get(selected.categoryId) : undefined} preset={selected.reminderPresetId ? presetMap.get(selected.reminderPresetId) : undefined} onClose={() => setSelectedId(null)} onEdit={() => setEditor(selected)} onStatus={(status) => void mutateTodo(selected.id, { status })} onDeleteForever={() => void deleteForever(selected)} />}
     </main>
 
@@ -568,9 +743,10 @@ function PresetSettingRow({ preset, canDelete, onSave, onDelete }: { preset: Pre
   return <div className="manage-row preset"><input aria-label={`${preset.name}提醒组名称`} value={name} maxLength={20} onChange={(event) => setName(event.target.value)} /><ReminderOffsetsEditor value={offsets} onChange={setOffsets} compact /><button className="button secondary compact" disabled={busy || !name.trim() || !offsets.length} onClick={() => void run(() => onSave(preset.id, { name, offsets }))}>保存</button><button className="icon-button danger-quiet" disabled={busy || !canDelete} title={canDelete ? "删除提醒组" : "至少保留一个提醒组"} onClick={() => void run(() => onDelete(preset.id))}><Trash2 size={17} /></button>{preset.isDefault ? <small className="default-badge">默认</small> : null}{error && <small className="row-error">{error}</small>}</div>;
 }
 
-function ProfileSettings({ data, settings, section, onSection, onSaveProfile, onPreviewSettings, onUpload, onRemoveBackground, onReload, setData, flash }: {
+function ProfileSettings({ data, settings, section, onSection, onSaveProfile, onSaveAppearance, onPreviewSettings, onUpload, onRemoveBackground, onReload, setData, flash }: {
   data: Bootstrap; settings: SettingsShape; section: "mine" | "settings"; onSection: (value: Section) => void;
-  onSaveProfile: (patch: { name?: string; settings?: SettingsShape; avatarUrl?: string }) => Promise<void>;
+  onSaveProfile: (patch: { name?: string; avatarUrl?: string }) => Promise<void>;
+  onSaveAppearance: (settings: SettingsShape) => Promise<void>;
   onPreviewSettings: (settings: SettingsShape) => void;
   onUpload: (file: File, kind: "avatar" | "background") => Promise<void>; onRemoveBackground: () => Promise<void>;
   onReload: () => Promise<void>; setData: React.Dispatch<React.SetStateAction<Bootstrap | null>>; flash: (message: string) => void;
@@ -602,14 +778,13 @@ function ProfileSettings({ data, settings, section, onSection, onSaveProfile, on
     if (committedAppearance.current[key] === value) return;
     committedAppearance.current[key] = value;
     setBackgroundError("");
-    void onSaveProfile({ settings: next }).catch(async (reason) => { setBackgroundError(reason instanceof Error ? reason.message : "外观设置保存失败"); await onReload(); });
+    void onSaveAppearance(next).catch((reason) => { setBackgroundError(reason instanceof Error ? reason.message : "外观设置保存失败"); });
   };
   const exportSection = async (target: string, format: "json" | "md") => {
     setDataError("");
-    const response = await fetch(apiUrl(`/api/data/export?section=${target}&format=${format}`), { credentials: "include" });
-    if (!response.ok) throw new Error("导出失败");
-    const blob = await response.blob(); const disposition = response.headers.get("content-disposition") || ""; const filename = disposition.match(/filename="([^"]+)"/)?.[1] || `jishi-${target}.${format}`;
-    const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); flash(`${format.toUpperCase()} 文件已导出`);
+    const anchor = document.createElement("a");
+    anchor.href = apiUrl(`/api/data/export?section=${target}&format=${format}`); anchor.download = `jishi-${target}.${format}`;
+    document.body.appendChild(anchor); anchor.click(); anchor.remove(); flash(`${format.toUpperCase()} 文件已开始导出`);
   };
   const importSection = async (target: string, file: File) => {
     setDataError("");
@@ -625,18 +800,18 @@ function ProfileSettings({ data, settings, section, onSection, onSaveProfile, on
     <section className="settings-card"><div className="settings-title"><UserRound size={20} /><div><h2>个人资料</h2><p>默认头像会自动显示，也可以裁选图片并上传到服务器</p></div></div><div className="profile-settings-row"><label className="avatar settings-avatar" aria-label="上传自定义头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="52px" unoptimized /> : <DefaultAvatar size={27} />}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /></label><div className="inline-form"><input value={name} maxLength={24} onChange={(event) => setName(event.target.value)} /><button className="button primary" onClick={() => void onSaveProfile({ name })}>保存姓名</button></div></div></section>
     <section className="settings-card"><div className="settings-title"><CircleUserRound size={20} /><div><h2>当前设备登录</h2><p>账号与密码设置只保存在当前设备，不同步到服务器</p></div></div><div className="setting-line"><div><strong>保存账号</strong><small>{deviceLogin.rememberAccount ? deviceLogin.email || data.user.email : "未保存"}</small></div><button role="switch" aria-checked={deviceLogin.rememberAccount} className={`switch ${deviceLogin.rememberAccount ? "on" : ""}`} onClick={() => updateDeviceLogin(deviceLogin.rememberAccount ? { rememberAccount: false } : { rememberAccount: true, email: data.user.email })}><span /></button></div><div className="setting-line"><div><strong>保存密码</strong><small>{deviceLogin.rememberPassword ? "已保存，可在登录页修改" : "请在下次登录时勾选保存密码"}</small></div><span className="setting-status">{deviceLogin.rememberPassword ? "已保存" : "未保存"}</span></div><div className="setting-line"><div><strong>自动登录</strong><small>启动应用时使用当前设备保存的凭据登录</small></div><button role="switch" aria-checked={deviceLogin.autoLogin} disabled={!deviceLogin.rememberPassword} className={`switch ${deviceLogin.autoLogin ? "on" : ""}`} onClick={() => updateDeviceLogin({ autoLogin: !deviceLogin.autoLogin })}><span /></button></div>{deviceLogin.rememberPassword && <button className="button secondary clear-login" onClick={() => updateDeviceLogin({ rememberAccount: false })}>清除本机保存的登录信息</button>}</section>
     <section className="settings-card">
-      <div className="settings-title"><Palette size={20} /><div><h2>主题与背景</h2><p>选择一套让你舒服的界面，设置会同步到 Web、Windows 和 Android</p></div></div>
-      <div className="theme-options">{(["linen", "sage", "night"] as const).map((theme) => <button key={theme} className={`${theme} ${settings.theme === theme ? "selected" : ""}`} onClick={() => void onSaveProfile({ settings: { ...settings, theme } })}><span /><b>{theme === "linen" ? "暖白" : theme === "sage" ? "青苔" : "夜墨"}</b></button>)}</div>
-      <div className="setting-line"><div><strong>主题色</strong><small>按钮与强调内容</small></div><input aria-label="选择主题色" type="color" value={settings.accent} onChange={(event) => onPreviewSettings({ ...settings, accent: event.target.value })} onBlur={(event) => void onSaveProfile({ settings: { ...settings, accent: event.target.value } })} /></div>
+      <div className="settings-title"><Palette size={20} /><div><h2>主题与背景</h2><p>外观和背景图片只保存在当前设备，不上传服务器</p></div></div>
+      <div className="theme-options">{(["linen", "sage", "night"] as const).map((theme) => <button key={theme} className={`${theme} ${settings.theme === theme ? "selected" : ""}`} onClick={() => void onSaveAppearance({ ...settings, theme })}><span /><b>{theme === "linen" ? "暖白" : theme === "sage" ? "青苔" : "夜墨"}</b></button>)}</div>
+      <div className="setting-line"><div><strong>主题色</strong><small>按钮与强调内容</small></div><input aria-label="选择主题色" type="color" value={settings.accent} onChange={(event) => onPreviewSettings({ ...settings, accent: event.target.value })} onBlur={(event) => void onSaveAppearance({ ...settings, accent: event.target.value })} /></div>
       <div className="setting-line"><div><strong>卡片亚克力效果</strong><small>为卡片添加轻柔的背景模糊</small></div><button role="switch" aria-checked={settings.acrylic} className={`switch ${settings.acrylic ? "on" : ""}`} onClick={() => commitAppearance("acrylic", !settings.acrylic)}><span /></button></div>
       <label className="range-line" aria-label="卡片透明度"><span><strong>卡片透明度</strong><small>{settings.cardOpacity}% · 即时预览，松开后保存</small></span><input aria-label="卡片透明度" type="range" min="15" max="100" value={settings.cardOpacity} onChange={(event) => previewAppearance({ cardOpacity: Number(event.target.value) })} onPointerUp={(event) => commitAppearance("cardOpacity", Number(event.currentTarget.value))} onTouchEnd={(event) => commitAppearance("cardOpacity", Number(event.currentTarget.value))} onKeyUp={(event) => commitAppearance("cardOpacity", Number(event.currentTarget.value))} onBlur={(event) => commitAppearance("cardOpacity", Number(event.currentTarget.value))} /></label>
       <div className="opacity-preview"><div className={`opacity-preview-card ${settings.acrylic ? "acrylic" : ""}`} style={{ "--card-opacity": settings.cardOpacity / 100 } as React.CSSProperties}><strong>卡片外观即时预览</strong><small>透明度和亚克力切换会立即显示</small></div></div>
       <label className="range-line" aria-label="背景透明度"><span><strong>背景透明度</strong><small>{settings.backgroundOpacity}% · 即时预览，松开后保存</small></span><input aria-label="背景透明度" type="range" min="15" max="100" value={settings.backgroundOpacity} onChange={(event) => previewAppearance({ backgroundOpacity: Number(event.target.value) })} onPointerUp={(event) => commitAppearance("backgroundOpacity", Number(event.currentTarget.value))} onTouchEnd={(event) => commitAppearance("backgroundOpacity", Number(event.currentTarget.value))} onKeyUp={(event) => commitAppearance("backgroundOpacity", Number(event.currentTarget.value))} onBlur={(event) => commitAppearance("backgroundOpacity", Number(event.currentTarget.value))} /></label>
       <div className="setting-line"><div><strong>背景亚克力效果</strong><small>为自定义背景增加柔和模糊和饱和度</small></div><button role="switch" aria-checked={settings.backgroundAcrylic} className={`switch ${settings.backgroundAcrylic ? "on" : ""}`} onClick={() => commitAppearance("backgroundAcrylic", !settings.backgroundAcrylic)}><span /></button></div>
-      <div className="background-picker">{settings.backgroundUrl ? <div className={`background-preview ${settings.backgroundAcrylic ? "acrylic" : ""}`} role="img" aria-label="当前自定义背景预览" style={{ backgroundImage: `linear-gradient(rgb(244 240 232 / ${1 - settings.backgroundOpacity / 100})), url(${withRuntimeBase(settings.backgroundUrl)})` }} /> : <div className="background-empty"><ImagePlus size={24} /><span>还没有自定义背景</span></div>}<div className="background-actions"><label className={`upload-button ${backgroundBusy ? "disabled" : ""}`} aria-label={settings.backgroundUrl ? "更换背景图片" : "选择背景图片"}><Crop size={18} />{settings.backgroundUrl ? "更换并裁选图片" : "选择并裁选图片"}<input aria-label="选择背景图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={backgroundBusy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "background"); }} /></label>{settings.backgroundUrl && <button className="button secondary background-remove" disabled={backgroundBusy} onClick={() => void clearBackground()}><Trash2 size={17} />移除背景</button>}</div><small className="background-hint">支持 JPEG、PNG、WebP、GIF，最大 5MB；上传前可调缩放和位置</small>{backgroundError && <p className="background-error" role="alert">{backgroundError}</p>}</div>
+      <div className="background-picker">{settings.backgroundUrl ? <div className={`background-preview ${settings.backgroundAcrylic ? "acrylic" : ""}`} role="img" aria-label="当前自定义背景预览" style={{ backgroundImage: `linear-gradient(rgb(244 240 232 / ${1 - settings.backgroundOpacity / 100})), url(${settings.backgroundUrl})` }} /> : <div className="background-empty"><ImagePlus size={24} /><span>还没有本机背景</span></div>}<div className="background-actions"><label className={`upload-button ${backgroundBusy ? "disabled" : ""}`} aria-label={settings.backgroundUrl ? "更换背景图片" : "选择背景图片"}><Crop size={18} />{settings.backgroundUrl ? "更换并裁选图片" : "选择并裁选图片"}<input aria-label="选择背景图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={backgroundBusy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "background"); }} /></label>{settings.backgroundUrl && <button className="button secondary background-remove" disabled={backgroundBusy} onClick={() => void clearBackground()}><Trash2 size={17} />移除背景</button>}</div><small className="background-hint">支持 JPEG、PNG、WebP、GIF，最大 5MB；裁选后以固定比例等比保存到本机</small>{backgroundError && <p className="background-error" role="alert">{backgroundError}</p>}</div>
     </section>
     <section className="settings-card"><div className="settings-title"><Filter size={20} /><div><h2>待办分类</h2><p>系统自带分类也可以修改名称和颜色；至少保留一个分类</p></div></div><div className="manage-list">{data.categories.map((category) => <CategorySettingRow key={category.id} category={category} canDelete={data.categories.length > 1} onSave={updateCategory} onDelete={deleteCategory} />)}</div><div className="inline-form"><input value={categoryName} maxLength={12} onChange={(event) => setCategoryName(event.target.value)} placeholder="新增分类，如：游戏" /><button className="button secondary" disabled={!categoryName.trim()} onClick={() => void addCategory()}><Plus size={17} />添加</button></div></section>
     <section className="settings-card"><div className="settings-title"><Bell size={20} /><div><h2>自定义提示时间</h2><p>每个时间点都可单独选择天、小时或分钟，最多设置 8 个</p></div></div><div className="manage-list">{data.reminderPresets.map((preset) => <PresetSettingRow key={preset.id} preset={preset} canDelete={data.reminderPresets.length > 1} onSave={updatePreset} onDelete={deletePreset} />)}</div><div className="new-preset"><input value={presetName} maxLength={20} onChange={(event) => setPresetName(event.target.value)} placeholder="提醒组名称，如：考试" /><ReminderOffsetsEditor value={newOffsets} onChange={setNewOffsets} /><button className="button secondary" disabled={!presetName.trim() || !newOffsets.length} onClick={() => void addPreset()}><Plus size={17} />添加提醒组</button></div></section>
-    <section className="settings-card"><div className="settings-title"><Download size={20} /><div><h2>数据导入与导出</h2><p>账户配置不包含密码；JSON 可恢复数据，Markdown 适合阅读和归档</p></div></div><div className="data-transfer-list">{([{ key: "config", label: "账户配置" }, { key: "todos", label: "待办" }, { key: "routines", label: "定期任务" }, { key: "habits", label: "习惯" }, { key: "diary", label: "日记" }] as const).map((item) => <div className="data-transfer-row" key={item.key}><strong>{item.label}</strong><div><button className="button secondary compact" onClick={() => void exportSection(item.key, "json").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileJson size={15} />JSON</button><button className="button secondary compact" onClick={() => void exportSection(item.key, "md").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileText size={15} />MD</button><label className="button secondary compact data-import"><Upload size={15} />导入 JSON<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSection(item.key, file).catch((reason) => setDataError(reason instanceof Error ? reason.message : "导入失败")); }} /></label></div></div>)}</div>{dataError && <p className="background-error" role="alert">{dataError}</p>}<small className="input-hint data-warning">导入前会再次确认，并替换当前账户中对应模块的数据；建议先导出 JSON 备份。</small></section>
+    <section className="settings-card"><div className="settings-title"><Download size={20} /><div><h2>数据导入与导出</h2><p>账户配置不包含密码；本机外观和背景不会上传或导出</p></div></div><div className="data-transfer-list">{([{ key: "config", label: "账户配置" }, { key: "todos", label: "待办" }, { key: "routines", label: "定期任务" }, { key: "habits", label: "习惯" }, { key: "diary", label: "日记" }] as const).map((item) => <div className="data-transfer-row" key={item.key}><strong>{item.label}</strong><div><button className="button secondary compact" onClick={() => void exportSection(item.key, "json").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileJson size={15} />JSON</button><button className="button secondary compact" onClick={() => void exportSection(item.key, "md").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileText size={15} />MD</button><label className="button secondary compact data-import"><Upload size={15} />导入 JSON<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSection(item.key, file).catch((reason) => setDataError(reason instanceof Error ? reason.message : "导入失败")); }} /></label></div></div>)}</div>{dataError && <p className="background-error" role="alert">{dataError}</p>}<small className="input-hint data-warning">导入前会再次确认，并替换当前账户中对应模块的数据；建议先导出 JSON 备份。</small></section>
   </div>{cropModal}</>;
 }

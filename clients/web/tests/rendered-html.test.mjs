@@ -54,13 +54,15 @@ test("includes product metadata and installable shell", async () => {
 });
 
 test("keeps the reported interaction regressions covered", async () => {
-  const [app, css, server, migration, androidConfig, offlinePage] = await Promise.all([
+  const [app, css, server, migration, androidConfig, offlinePage, androidActivity, androidManifest] = await Promise.all([
     readFile(new URL("../app/TodoApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../../../server/src/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../../../server/drizzle/0001_modules_and_portability.sql", import.meta.url), "utf8"),
     readFile(new URL("../../android/capacitor.config.ts", import.meta.url), "utf8"),
     readFile(new URL("../../android/www/offline.html", import.meta.url), "utf8"),
+    readFile(new URL("../../android/android/app/src/main/java/cn/jishi/todo/MainActivity.java", import.meta.url), "utf8"),
+    readFile(new URL("../../android/android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8"),
   ]);
   assert.match(app, /notificationsSupported\(\)/);
   assert.match(app, /detail-layer/);
@@ -84,15 +86,55 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(app, /backgroundAcrylic/);
   assert.match(app, /onChange=.*previewAppearance\(\{ cardOpacity/s);
   assert.match(app, /style=\{\{ width: Math\.max\(0, -?drag\) \}\}/);
+  assert.match(app, /const dragValue = useRef\(0\)/);
+  assert.match(app, /const distance = dragValue\.current/);
   assert.doesNotMatch(css, /swipe-shell\.completing|swipe-shell\.deleting/);
+  assert.match(css, /\.swipe-action\s*\{[^}]*padding:\s*0;/s);
+  assert.match(css, /\.delete-action > svg[^}]*margin-left:\s*22px/s);
   assert.match(css, /background-acrylic::after/);
   assert.match(app, /function ScheduleBoard/);
+  assert.match(app, /function ScheduleDetailPanel/);
+  assert.match(app, /task-action-menu/);
+  assert.match(app, /onEdit=\{\(\) => setEditor\(todo\)\}/);
+  assert.match(app, /mobile-quick-menu/);
+  assert.match(app, /showDeviceNotification/);
+  assert.match(app, /registration\.showNotification/);
+  assert.match(app, /JishiNative/);
+  assert.match(app, /jishi-notification-history-v1/);
+  assert.match(app, /document\.addEventListener\("visibilitychange"/);
+  assert.match(app, /jishi-native-notification-permission/);
+  assert.match(app, /if \(deadline <= now\)/);
   assert.match(app, /function DiaryBoard/);
   assert.match(app, /\/api\/data\/export/);
+  assert.doesNotMatch(app, /response\.blob\(\).*createObjectURL/s);
+  assert.match(app, /anchor\.download = `jishi-\$\{target\}\.\$\{format\}`/);
+  assert.match(app, /jishi-local-appearance-v1/);
+  assert.match(app, /indexedDB\.open\(LOCAL_MEDIA_DB/);
+  assert.match(app, /writeLocalBackground\(data\.user\.id, file\)/);
+  assert.doesNotMatch(app, /api\/media\?kind=background/);
+  assert.doesNotMatch(app, /onSaveProfile\(\{ settings:/);
+  assert.match(css, /\.editor-scroll\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0/s);
+  assert.match(css, /\.crop-panel\s*\{[^}]*display:\s*flex;[^}]*overflow:\s*hidden/s);
+  assert.match(app, /const previewGeometry = useMemo/);
+  assert.match(app, /Math\.min\(outputWidth \/ image\.naturalWidth, outputHeight \/ image\.naturalHeight\)/);
+  assert.match(app, /activePointers/);
+  assert.match(app, /onWheel=/);
+  assert.match(app, />完整显示</);
+  assert.match(app, />填满裁剪框</);
+  assert.doesNotMatch(app, />水平位置</);
+  assert.doesNotMatch(app, />垂直位置</);
+  assert.match(css, /\.crop-viewport img\s*\{[^}]*position:\s*absolute/s);
   assert.match(server, /CREATE TABLE IF NOT EXISTS schedule_items/);
   assert.match(server, /CREATE TABLE IF NOT EXISTS diary_entries/);
   assert.match(server, /\/api\/data\/import/);
   assert.match(migration, /CREATE TABLE `schedule_records`/);
   assert.match(androidConfig, /errorPath:\s*"offline\.html"/);
   assert.match(offlinePage, /重新连接主服务器/);
+  assert.match(androidActivity, /addJavascriptInterface\(new JishiNativeBridge\(\), "JishiNative"\)/);
+  assert.match(androidActivity, /NotificationManagerCompat/);
+  assert.match(androidActivity, /pendingNotifications/);
+  assert.match(androidActivity, /evaluateJavascript/);
+  assert.match(androidActivity, /DownloadManager\.Request/);
+  assert.match(androidActivity, /CookieManager\.getInstance\(\)\.getCookie\(url\)/);
+  assert.match(androidManifest, /android\.permission\.POST_NOTIFICATIONS/);
 });

@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-66f91208d4970d31",
-  "webBuild": "66f91208d4970d317ca8d238d1ccb0c82d2ee830f2c8d4c769f799e8c54e9b03",
-  "publishedAt": "2026-08-16T14:55:27.113Z",
+  "releaseId": "web-ebdadbf58beec459",
+  "webBuild": "ebdadbf58beec4594542625548fc975fd8e84ed633def275910eacf45edb37a4",
+  "publishedAt": "2026-08-21T08:21:29.834Z",
   "notes": [
-    "提醒时间支持天、小时、分钟",
-    "修复提醒时间新增、外观即时更新和透明卡片滑动显示",
-    "新增背景透明度与背景亚克力设置"
+    "修复移动端待办编辑、更多菜单和详情状态操作",
+    "重做头像与背景图片裁选并改为本机缓存",
+    "修复应用启动提醒、手机消息栏通知和数据导出闪退",
+    "修复滑动误开详情及定期任务、习惯完成页色块过渡"
   ],
   "clients": {
     "windows": {
@@ -17,10 +18,10 @@
       "required": false
     },
     "android": {
-      "version": "0.4.4",
-      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.4.apk",
-      "sha256": "4C4075B8E818B4810D150D41612A284E3C35C02BE20C427ABF86D32474BCBEA4",
-      "size": 4053720,
+      "version": "0.4.5",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.5.apk",
+      "sha256": "5770947B38AC4B77158DED92EBE5F39D9B8A4561BEADEA097221C234FADD1DDE",
+      "size": 4057975,
       "required": false
     }
   }
