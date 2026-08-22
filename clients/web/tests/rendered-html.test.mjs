@@ -92,6 +92,10 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(css, /\.swipe-action\s*\{[^}]*padding:\s*0;/s);
   assert.match(css, /\.delete-action > svg[^}]*margin-left:\s*22px/s);
   assert.match(css, /background-acrylic::after/);
+  assert.match(css, /\.app-shell\s*\{[^}]*isolation:\s*isolate/s);
+  assert.match(css, /background-acrylic::after\s*\{[^}]*z-index:\s*-1/s);
+  assert.match(css, /\.main-surface\s*\{[^}]*z-index:\s*auto/s);
+  assert.match(css, /\.main-surface\s*\{[^}]*padding:\s*28px 18px calc\(112px \+ env\(safe-area-inset-bottom\)\)/s);
   assert.match(app, /function ScheduleBoard/);
   assert.match(app, /function ScheduleDetailPanel/);
   assert.match(app, /task-action-menu/);

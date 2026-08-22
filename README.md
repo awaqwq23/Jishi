@@ -10,7 +10,7 @@
 │  ├─ windows/         Windows Electron 客户端
 │  ├─ android/         Android Capacitor 客户端
 │  └─ harmony/         HarmonyOS ArkTS 客户端
-├─ Jishi-*.exe/.apk    当前版与前一版客户端安装包
+├─ Jishi-*.exe/.apk    当前版本客户端安装包
 ├─ INSTALL-PACKAGES-SHA256.txt  当前版安装包校验文件
 ├─ docker-compose.yml  1GB Linux 一键部署
 └─ package.json        总控脚本
@@ -36,8 +36,8 @@ Web 客户端通过 `clients/web/.env.local` 的 `NEXT_PUBLIC_API_URL` 连接独
 - HarmonyOS：`.hap`；必须由华为 DevEco/HarmonyOS SDK 编译和签名
 - Server：Linux Docker 部署压缩包
 
-当前版与前一版客户端安装包放在仓库根目录；当前版对应的
-`INSTALL-PACKAGES-SHA256.txt` 可用于检查下载完整性。更早的发布包不保留在源码仓库中。
+当前版本客户端安装包放在仓库根目录；对应的
+`INSTALL-PACKAGES-SHA256.txt` 可用于检查下载完整性。旧版本发布包不保留在源码仓库中。
 
 > Windows 安装程序目前未做商业代码签名；Android APK 使用标准调试证书签名。HarmonyOS 真机安装包必须使用开发者自己的华为证书，因此仓库不会保存签名凭据。
 
