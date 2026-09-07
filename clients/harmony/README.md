@@ -1,6 +1,8 @@
 # HarmonyOS 客户端
 
-这是独立的 HarmonyOS ArkTS/ArkUI 工程，默认连接已经部署的记时 HTTPS 服务。要更换服务地址，修改 `entry/src/main/ets/pages/Index.ets` 中的 `appUrl`。
+这是独立的 HarmonyOS ArkTS/ArkUI 工程。0.3.0 默认连接 `https://jishi.awaqwq233.com/`，连接失败时自动切换到 `https://awaqwq233.com/note/`。主站、备用站和版本 User-Agent 位于 `entry/src/main/ets/pages/Index.ets`。
+
+客户端通过受限的 `JishiNative` JavaScript 代理接入 HarmonyOS 系统通知授权和即时通知；不向网页暴露账号凭据。AppGallery 审核通过后台代理提醒能力后，可继续为 `syncReminders` 接入进程退出后的系统级定时提醒。
 
 ## 生成 HAP
 

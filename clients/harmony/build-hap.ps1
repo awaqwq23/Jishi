@@ -11,20 +11,20 @@ $hvigorCandidates = @(
 ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
 
 if ($hvigorCandidates.Count -eq 0) {
-  throw '未找到 hvigorw。请先从华为开发者联盟安装最新版 DevEco Studio/Command Line Tools，并在 DevEco Studio 中首次打开本目录以下载 HarmonyOS API 12 SDK。'
+  throw 'hvigorw was not found. Install DevEco Studio or Command Line Tools and the HarmonyOS API 12 SDK first.'
 }
 
 $hvigor = $hvigorCandidates[0]
 & $hvigor --mode project -p product=default -p buildMode=debug assembleHap
 if ($LASTEXITCODE -ne 0) {
-  throw "HarmonyOS 构建失败，退出码：$LASTEXITCODE"
+  throw "HarmonyOS build failed with exit code $LASTEXITCODE"
 }
 
 $hap = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'entry\build') -Filter '*.hap' -File -Recurse |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 1
 if (-not $hap) {
-  throw '构建命令已结束，但没有找到 .hap 文件。'
+  throw 'The build finished without producing a .hap file.'
 }
 
-Write-Host "HAP 已生成：$($hap.FullName)"
+Write-Host "HAP created: $($hap.FullName)"

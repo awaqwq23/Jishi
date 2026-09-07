@@ -3,7 +3,7 @@
 import {
   ArchiveRestore, Bell, BookOpen, CalendarDays, Check, ChevronRight, CircleUserRound,
   Clock3, Crop, Download, FileJson, FileText, Filter, ImagePlus, LayoutList, Menu, MoreHorizontal,
-  Palette, Pencil, Plus, Repeat2, RotateCcw, Save, Search, Settings, SlidersHorizontal,
+  Palette, Pencil, Plus, RotateCcw, Save, Search, Settings, SlidersHorizontal,
   Sparkles, Trash2, Upload, UserRound, X,
 } from "lucide-react";
 import Image from "next/image";
@@ -22,7 +22,7 @@ type Category = { id: string; name: string; color: string; isDefault: number };
 type Preset = { id: string; name: string; offsets: number[]; isDefault: number };
 type ScheduleKind = "routine" | "habit";
 type Recurrence = "once" | "daily" | "weekly" | "custom" | "holidays";
-type Section = "todos" | "routines" | "habits" | "diary" | "mine" | "settings" | "trash";
+type Section = "todos" | "routines" | "diary" | "mine" | "settings" | "trash";
 type ScheduleItem = { id: string; kind: ScheduleKind; title: string; notes: string; recurrence: Recurrence; startDate: string; timeOfDay: string | null; weekdays: number[]; status: "active" | "deleted"; createdAt: string; updatedAt: string; deletedAt: string | null };
 type ScheduleRecord = { id: string; itemId: string; occurrenceDate: string; completedAt: string };
 type DiaryEntry = { id: string; entryDate: string; content: string; createdAt: string; updatedAt: string };
@@ -41,7 +41,14 @@ const APPEARANCE_KEY_PREFIX = "jishi-local-appearance-v1:";
 const LOCAL_MEDIA_DB = "jishi-local-media-v1";
 const LOCAL_MEDIA_STORE = "backgrounds";
 
-type NativeBridge = { notify: (title: string, body: string, key: string) => void };
+type NativeReminder = { key: string; title: string; body: string; at: number };
+type NativeBridge = {
+  notify: (title: string, body: string, key: string) => void;
+  requestNotificationPermission?: () => void | Promise<string>;
+  notificationPermissionState?: () => string | Promise<string>;
+  syncReminders?: (payload: string) => void;
+};
+type ReminderNotice = { title: string; body: string };
 
 const priorityMeta: Record<Priority, { label: string; hint: string }> = {
   low: { label: "不重要", hint: "慢慢来" },
@@ -166,6 +173,33 @@ function occursOn(item: ScheduleItem, dateKey: string) {
   const day = new Date(`${dateKey}T12:00:00`).getDay();
   if (item.recurrence === "holidays") return day === 0 || day === 6;
   return item.weekdays.includes(day);
+}
+
+function upcomingNativeReminders(data: Bootstrap, now = Date.now()): NativeReminder[] {
+  const horizon = now + 21 * 86400000;
+  const reminders: NativeReminder[] = [];
+  for (const todo of data.todos) {
+    if (todo.status !== "active" || !todo.deadline) continue;
+    const deadline = new Date(todo.deadline).getTime();
+    if (!Number.isFinite(deadline)) continue;
+    for (const offset of [...todo.reminderOffsets, 0]) {
+      const at = deadline - offset * 60000;
+      if (at > now && at <= horizon) reminders.push({ key: `todo:${todo.id}:${at}`, title: todo.title, body: offset ? `${formatOffsets([offset])}后截止` : "待办时间已到", at });
+    }
+  }
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  for (let day = 0; day <= 21; day += 1) {
+    const date = new Date(start.getTime() + day * 86400000);
+    const dateKey = localDateKey(date);
+    const completed = new Set(data.scheduleRecords.filter((record) => record.occurrenceDate === dateKey).map((record) => record.itemId));
+    for (const item of data.schedules) {
+      if (item.status !== "active" || !item.timeOfDay || !occursOn(item, dateKey) || completed.has(item.id)) continue;
+      const at = new Date(`${dateKey}T${item.timeOfDay}`).getTime();
+      if (at > now && at <= horizon) reminders.push({ key: `schedule:${item.id}:${dateKey}`, title: item.title, body: `定期任务时间：${item.timeOfDay}`, at });
+    }
+  }
+  return reminders.sort((left, right) => left.at - right.at).slice(0, 300);
 }
 
 function dateTime(value: string | null, fallback = "未设置") {
@@ -414,13 +448,14 @@ function DetailPanel({ todo, category, preset, onClose, onEdit, onStatus, onDele
 
 type ScheduleEditorValue = Pick<ScheduleItem, "kind" | "title" | "notes" | "recurrence" | "startDate" | "timeOfDay" | "weekdays">;
 
-function ScheduleEditor({ kind, initial, saving, onClose, onSave }: { kind: ScheduleKind; initial?: ScheduleItem; saving: boolean; onClose: () => void; onSave: (value: ScheduleEditorValue) => void }) {
+function ScheduleEditor({ initial, saving, onClose, onSave }: { initial?: ScheduleItem; saving: boolean; onClose: () => void; onSave: (value: ScheduleEditorValue) => void }) {
   const today = localDateKey(); const todayDay = new Date(`${today}T12:00:00`).getDay();
-  const [value, setValue] = useState<ScheduleEditorValue>({ kind, title: initial?.title || "", notes: initial?.notes || "", recurrence: initial?.recurrence || "daily", startDate: initial?.startDate || today, timeOfDay: kind === "routine" ? initial?.timeOfDay || "09:00:00" : null, weekdays: initial?.weekdays.length ? initial.weekdays : [todayDay] });
+  const [value, setValue] = useState<ScheduleEditorValue>({ kind: initial?.kind || "routine", title: initial?.title || "", notes: initial?.notes || "", recurrence: initial?.recurrence || "daily", startDate: initial?.startDate || today, timeOfDay: initial ? initial.timeOfDay : "09:00:00", weekdays: initial?.weekdays.length ? initial.weekdays : [todayDay] });
+  const [hasReminderTime, setHasReminderTime] = useState(initial ? !!initial.timeOfDay : true);
   const update = <K extends keyof ScheduleEditorValue>(key: K, next: ScheduleEditorValue[K]) => setValue((old) => ({ ...old, [key]: next }));
   const toggleDay = (day: number) => update("weekdays", value.weekdays.includes(day) ? value.weekdays.filter((item) => item !== day) : [...value.weekdays, day].sort());
   const needsDays = value.recurrence === "weekly" || value.recurrence === "custom";
-  return <div className="modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="editor-panel" role="dialog" aria-modal="true" aria-label={kind === "routine" ? "定期任务编辑器" : "习惯编辑器"}><header className="editor-head"><div><span className="eyebrow">{initial ? "修改计划" : "新的计划"}</span><h2>{initial ? "编辑" : "创建"}{kind === "routine" ? "定期任务" : "习惯"}</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={21} /></button></header><div className="editor-scroll"><label className="field"><span>计划内容 <em>必填 · 最多 80 字</em></span><input maxLength={80} value={value.title} onChange={(event) => update("title", event.target.value)} placeholder={kind === "routine" ? "例如：每天 20:00 整理明日计划" : "例如：阅读 30 分钟"} /><small>{value.title.length}/80</small></label><label className="field"><span>说明</span><textarea rows={3} value={value.notes} onChange={(event) => update("notes", event.target.value)} placeholder="记录目标、做法或注意事项" /></label><div className="field-grid"><label className="field"><span>重复方式</span><select value={value.recurrence} onChange={(event) => update("recurrence", event.target.value as Recurrence)}><option value="once">单次</option><option value="daily">每天</option><option value="weekly">每周</option><option value="custom">选定周几</option><option value="holidays">节假日/周末</option></select></label><label className="field"><span>{value.recurrence === "once" ? "执行日期" : "开始日期"}</span><input type="date" value={value.startDate} onChange={(event) => update("startDate", event.target.value)} /></label></div>{kind === "routine" && <label className="field"><span>提醒时间 <em>支持到秒</em></span><input type="time" step="1" value={value.timeOfDay || "09:00:00"} onChange={(event) => update("timeOfDay", event.target.value)} /></label>}{needsDays && <div className="weekday-picker" role="group" aria-label="选择星期">{weekdayNames.map((name, day) => <button type="button" key={name} className={value.weekdays.includes(day) ? "selected" : ""} onClick={() => toggleDay(day)}>{name.replace("周", "")}</button>)}</div>}{value.recurrence === "holidays" && <small className="input-hint">节假日规则当前按周六、周日执行，后续可继续接入法定节假日日历。</small>}</div><footer className="editor-actions"><button className="button secondary" onClick={onClose}>取消</button><button className="button primary" disabled={saving || !value.title.trim() || (needsDays && !value.weekdays.length)} onClick={() => onSave(value)}>{saving ? "正在保存…" : "保存计划"}</button></footer></section></div>;
+  return <div className="modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="editor-panel" role="dialog" aria-modal="true" aria-label="定期任务编辑器"><header className="editor-head"><div><span className="eyebrow">{initial ? "修改计划" : "新的计划"}</span><h2>{initial ? "编辑" : "创建"}定期任务</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭"><X size={21} /></button></header><div className="editor-scroll"><label className="field"><span>计划内容 <em>必填 · 最多 80 字</em></span><input maxLength={80} value={value.title} onChange={(event) => update("title", event.target.value)} placeholder="例如：每天阅读 30 分钟" /><small>{value.title.length}/80</small></label><label className="field"><span>说明</span><textarea rows={3} value={value.notes} onChange={(event) => update("notes", event.target.value)} placeholder="记录目标、做法或注意事项" /></label><div className="field-grid"><label className="field"><span>重复方式</span><select value={value.recurrence} onChange={(event) => update("recurrence", event.target.value as Recurrence)}><option value="once">单次</option><option value="daily">每天</option><option value="weekly">每周</option><option value="custom">选定周几</option><option value="holidays">节假日/周末</option></select></label><label className="field"><span>{value.recurrence === "once" ? "执行日期" : "开始日期"}</span><input type="date" value={value.startDate} onChange={(event) => update("startDate", event.target.value)} /></label></div><div className="setting-line schedule-time-switch"><div><strong>定时提醒</strong><small>关闭后作为全天计划，不发送到点通知</small></div><button type="button" role="switch" aria-checked={hasReminderTime} className={`switch ${hasReminderTime ? "on" : ""}`} onClick={() => { const next = !hasReminderTime; setHasReminderTime(next); update("timeOfDay", next ? value.timeOfDay || "09:00:00" : null); }}><span /></button></div>{hasReminderTime && <label className="field"><span>提醒时间 <em>支持到秒</em></span><input type="time" step="1" value={value.timeOfDay || "09:00:00"} onChange={(event) => update("timeOfDay", event.target.value)} /></label>}{needsDays && <div className="weekday-picker" role="group" aria-label="选择星期">{weekdayNames.map((name, day) => <button type="button" key={name} className={value.weekdays.includes(day) ? "selected" : ""} onClick={() => toggleDay(day)}>{name.replace("周", "")}</button>)}</div>}{value.recurrence === "holidays" && <small className="input-hint">节假日规则当前按周六、周日执行，后续可继续接入法定节假日日历。</small>}</div><footer className="editor-actions"><button className="button secondary" onClick={onClose}>取消</button><button className="button primary" disabled={saving || !value.title.trim() || (needsDays && !value.weekdays.length)} onClick={() => onSave({ ...value, timeOfDay: hasReminderTime ? value.timeOfDay || "09:00:00" : null })}>{saving ? "正在保存…" : "保存计划"}</button></footer></section></div>;
 }
 
 function ScheduleCard({ item, completed, onOpen, onComplete, onDelete, onRestore, onDeleteForever, cardOpacity, acrylic }: { item: ScheduleItem; completed: boolean; onOpen: () => void; onComplete: () => void; onDelete: () => void; onRestore: () => void; onDeleteForever: () => void; cardOpacity: number; acrylic: boolean }) {
@@ -429,30 +464,29 @@ function ScheduleCard({ item, completed, onOpen, onComplete, onDelete, onRestore
   const move = (event: React.PointerEvent<HTMLDivElement>) => { if (!start.current) return; const distance = event.clientX - start.current.x; if (Math.abs(distance) < 6 && !start.current.captured) return; if (!start.current.captured) { event.currentTarget.setPointerCapture(event.pointerId); start.current.captured = true; } const next = Math.max(-start.current.width * .58, Math.min(start.current.width * .58, distance)); dragValue.current = next; setDrag(next); };
   const end = () => { if (!start.current) return; const threshold = start.current.width * .5; const distance = dragValue.current; suppressClick.current = Math.abs(distance) > 6; if (distance <= -threshold) onComplete(); else if (distance >= threshold) onDelete(); dragValue.current = 0; setDrag(0); start.current = null; };
   const cancel = () => { suppressClick.current = Math.abs(dragValue.current) > 6; dragValue.current = 0; setDrag(0); start.current = null; };
-  return <div className={`swipe-shell schedule-shell ${drag !== 0 ? "swiping" : ""}`}><div className="swipe-action delete-action" style={{ width: Math.max(0, drag) }}><Trash2 size={21} /><span>移入回收站</span></div><div className="swipe-action complete-action" style={{ width: Math.max(0, -drag) }}><Check size={22} /><span>{completed ? "改为未做到" : item.kind === "habit" ? "标记做到" : "标记完成"}</span></div><div role="button" tabIndex={0} className={`task-card schedule-card ${completed ? "schedule-completed" : ""} ${acrylic ? "acrylic" : ""}`} style={{ transform: `translateX(${drag}px)`, "--card-opacity": cardOpacity / 100 } as React.CSSProperties} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onOpen(); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><div className="task-card-top"><div className="task-title-row">{completed ? <Check size={17} /> : item.kind === "routine" ? <CalendarDays size={17} /> : <Repeat2 size={17} />}<h3>{item.title}</h3></div><span className={`status-badge ${item.status === "deleted" ? "status-deleted" : completed ? "status-completed" : "status-active"}`}>{item.status === "deleted" ? "回收站" : completed ? item.kind === "habit" ? "已做到" : "已完成" : item.kind === "habit" ? "未做到" : "未完成"}</span></div>{item.notes && <p className="task-preview">{item.notes}</p>}<div className="task-meta"><span>{recurrenceLabel(item)}</span>{item.kind === "routine" && <span><Clock3 size={14} />{item.timeOfDay}</span>}</div>{item.status === "deleted" && <span className="schedule-card-actions"><button type="button" className="text-button" onClick={(event) => { event.stopPropagation(); onRestore(); }}><RotateCcw size={14} />恢复</button><button type="button" className="text-button danger-quiet" onClick={(event) => { event.stopPropagation(); onDeleteForever(); }}><Trash2 size={14} />永久删除</button></span>}</div></div>;
+  return <div className={`swipe-shell schedule-shell ${drag !== 0 ? "swiping" : ""}`}><div className="swipe-action delete-action" style={{ width: Math.max(0, drag) }}><Trash2 size={21} /><span>移入回收站</span></div><div className="swipe-action complete-action" style={{ width: Math.max(0, -drag) }}><Check size={22} /><span>{completed ? "改为未完成" : "标记完成"}</span></div><div role="button" tabIndex={0} className={`task-card schedule-card ${completed ? "schedule-completed" : ""} ${acrylic ? "acrylic" : ""}`} style={{ transform: `translateX(${drag}px)`, "--card-opacity": cardOpacity / 100 } as React.CSSProperties} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } onOpen(); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><div className="task-card-top"><div className="task-title-row">{completed ? <Check size={17} /> : <CalendarDays size={17} />}<h3>{item.title}</h3></div><span className={`status-badge ${item.status === "deleted" ? "status-deleted" : completed ? "status-completed" : "status-active"}`}>{item.status === "deleted" ? "回收站" : completed ? "已完成" : "未完成"}</span></div>{item.notes && <p className="task-preview">{item.notes}</p>}<div className="task-meta"><span>{recurrenceLabel(item)}</span><span><Clock3 size={14} />{item.timeOfDay || "全天"}</span></div>{item.status === "deleted" && <span className="schedule-card-actions"><button type="button" className="text-button" onClick={(event) => { event.stopPropagation(); onRestore(); }}><RotateCcw size={14} />恢复</button><button type="button" className="text-button danger-quiet" onClick={(event) => { event.stopPropagation(); onDeleteForever(); }}><Trash2 size={14} />永久删除</button></span>}</div></div>;
 }
 
 function ScheduleDetailPanel({ item, date, completed, onClose, onEdit, onComplete, onDelete, onRestore, onDeleteForever }: { item: ScheduleItem; date: string; completed: boolean; onClose: () => void; onEdit: () => void; onComplete: () => void; onDelete: () => void; onRestore: () => void; onDeleteForever: () => void }) {
-  const completedLabel = item.kind === "habit" ? "已做到" : "已完成";
-  const pendingLabel = item.kind === "habit" ? "未做到" : "未完成";
-  return <div className="detail-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="detail-panel" role="dialog" aria-modal="true" aria-label={`${item.kind === "habit" ? "习惯" : "定期任务"}详情`}>
+  const completedLabel = "已完成";
+  const pendingLabel = "未完成";
+  return <div className="detail-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="detail-panel" role="dialog" aria-modal="true" aria-label="定期任务详情">
     <div className="detail-handle" />
     <header className="detail-head"><span className={`status-badge ${item.status === "deleted" ? "status-deleted" : completed ? "status-completed" : "status-active"}`}>{item.status === "deleted" ? "回收站" : completed ? completedLabel : pendingLabel}</span><button className="icon-button" onClick={onClose} aria-label="关闭详情"><X size={20} /></button></header>
     <div className="detail-body"><h2>{item.title}</h2>{item.notes ? <p className="detail-content">{item.notes}</p> : <p className="detail-muted">没有补充说明</p>}
-      <dl className="detail-list"><div><dt>查看日期</dt><dd>{date}</dd></div><div><dt>重复方式</dt><dd>{recurrenceLabel(item)}</dd></div>{item.kind === "routine" && <div><dt>提醒时间</dt><dd>{item.timeOfDay || "未设置"}</dd></div>}<div><dt>开始日期</dt><dd>{item.startDate}</dd></div><div><dt>创建时间</dt><dd>{fullDate(item.createdAt)}</dd></div>{item.deletedAt && <div><dt>删除时间</dt><dd>{fullDate(item.deletedAt)}</dd></div>}</dl>
+      <dl className="detail-list"><div><dt>查看日期</dt><dd>{date}</dd></div><div><dt>重复方式</dt><dd>{recurrenceLabel(item)}</dd></div><div><dt>提醒时间</dt><dd>{item.timeOfDay || "全天，不发送到点通知"}</dd></div><div><dt>开始日期</dt><dd>{item.startDate}</dd></div><div><dt>创建时间</dt><dd>{fullDate(item.createdAt)}</dd></div>{item.deletedAt && <div><dt>删除时间</dt><dd>{fullDate(item.deletedAt)}</dd></div>}</dl>
     </div>
     <footer className="detail-actions schedule-detail-actions">{item.status === "deleted" ? <><button className="button secondary" onClick={onRestore}><RotateCcw size={17} />恢复</button><button className="button danger" onClick={onDeleteForever}><Trash2 size={17} />永久删除</button></> : <><button className="button secondary" onClick={onEdit}><Pencil size={17} />编辑</button><button className="button primary" onClick={onComplete}><Check size={17} />{completed ? `改为${pendingLabel}` : `标记${completedLabel}`}</button><button className="icon-button danger-quiet" onClick={onDelete} aria-label="移入回收站"><Trash2 size={19} /></button></>}</footer>
   </aside></div>;
 }
 
-function ScheduleBoard({ kind, items, records, cardOpacity, acrylic, onCreate, onUpdate, onComplete, onDeleteForever }: { kind: ScheduleKind; items: ScheduleItem[]; records: ScheduleRecord[]; cardOpacity: number; acrylic: boolean; onCreate: (value: ScheduleEditorValue) => Promise<void>; onUpdate: (id: string, patch: Partial<ScheduleEditorValue> & { status?: "active" | "deleted" }) => Promise<void>; onComplete: (id: string, date: string, completed: boolean) => Promise<void>; onDeleteForever: (id: string) => Promise<void> }) {
+function ScheduleBoard({ items, records, cardOpacity, acrylic, onCreate, onUpdate, onComplete, onDeleteForever }: { items: ScheduleItem[]; records: ScheduleRecord[]; cardOpacity: number; acrylic: boolean; onCreate: (value: ScheduleEditorValue) => Promise<void>; onUpdate: (id: string, patch: Partial<ScheduleEditorValue> & { status?: "active" | "deleted" }) => Promise<void>; onComplete: (id: string, date: string, completed: boolean) => Promise<void>; onDeleteForever: (id: string) => Promise<void> }) {
   const [date, setDate] = useState(localDateKey); const [filter, setFilter] = useState<"pending" | "completed" | "deleted">("pending"); const [editor, setEditor] = useState<"new" | ScheduleItem | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null); const [saving, setSaving] = useState(false);
   const recordIds = new Set(records.filter((record) => record.occurrenceDate === date).map((record) => record.itemId));
-  const visible = items.filter((item) => item.kind === kind).filter((item) => filter === "deleted" ? item.status === "deleted" : item.status === "active" && occursOn(item, date) && (filter === "completed" ? recordIds.has(item.id) : !recordIds.has(item.id)));
+  const visible = items.filter((item) => filter === "deleted" ? item.status === "deleted" : item.status === "active" && occursOn(item, date) && (filter === "completed" ? recordIds.has(item.id) : !recordIds.has(item.id)));
   const selected = items.find((item) => item.id === selectedId) || null;
   const save = async (value: ScheduleEditorValue) => { setSaving(true); try { if (editor && editor !== "new") await onUpdate(editor.id, value); else await onCreate(value); setEditor(null); } finally { setSaving(false); } };
-  const noun = kind === "routine" ? "定期任务" : "习惯";
-  return <div className="module-page"><header className="topbar"><div><span className="eyebrow">{kind === "routine" ? "像闹钟一样按计划出现" : "把坚持留下来"}</span><h1>{noun}</h1></div><button className="button primary" onClick={() => setEditor("new")}><Plus size={18} />新建{noun}</button></header><div className="module-toolbar"><label><CalendarDays size={16} /><input aria-label="查看日期" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><div className="status-tabs compact-tabs"><button className={filter === "pending" ? "active" : ""} onClick={() => setFilter("pending")}>{kind === "habit" ? "未做到" : "未完成"}</button><button className={filter === "completed" ? "active" : ""} onClick={() => setFilter("completed")}>{kind === "habit" ? "已做到" : "已完成"}</button><button className={filter === "deleted" ? "active" : ""} onClick={() => setFilter("deleted")}>回收站</button></div></div><section className="task-list">{visible.length ? visible.map((item) => <ScheduleCard key={item.id} item={item} completed={recordIds.has(item.id)} cardOpacity={cardOpacity} acrylic={acrylic} onOpen={() => setSelectedId(item.id)} onComplete={() => void onComplete(item.id, date, !recordIds.has(item.id))} onDelete={() => void onUpdate(item.id, { status: "deleted" })} onRestore={() => void onUpdate(item.id, { status: "active" })} onDeleteForever={() => void onDeleteForever(item.id)} />) : <div className="empty-state"><span className="empty-mark">{kind === "routine" ? <CalendarDays size={24} /> : <Repeat2 size={24} />}</span><h3>这一天没有{filter === "completed" ? kind === "habit" ? "已做到的习惯" : "已完成的任务" : filter === "deleted" ? "回收站内容" : noun}</h3><p>可切换日期，或新建一项计划。</p></div>}</section>{selected && <ScheduleDetailPanel item={selected} date={date} completed={recordIds.has(selected.id)} onClose={() => setSelectedId(null)} onEdit={() => { setSelectedId(null); setEditor(selected); }} onComplete={() => void onComplete(selected.id, date, !recordIds.has(selected.id))} onDelete={() => void onUpdate(selected.id, { status: "deleted" }).then(() => setSelectedId(null))} onRestore={() => void onUpdate(selected.id, { status: "active" }).then(() => setSelectedId(null))} onDeleteForever={() => void onDeleteForever(selected.id).then(() => setSelectedId(null))} />}{editor && <ScheduleEditor kind={kind} initial={editor === "new" ? undefined : editor} saving={saving} onClose={() => setEditor(null)} onSave={(value) => void save(value)} />}</div>;
+  return <div className="module-page"><header className="topbar"><div><span className="eyebrow">计划、打卡与到点提醒统一管理</span><h1>定期任务</h1></div><button className="button primary" onClick={() => setEditor("new")}><Plus size={18} />新建定期任务</button></header><div className="module-toolbar"><label><CalendarDays size={16} /><input aria-label="查看日期" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><div className="status-tabs compact-tabs"><button className={filter === "pending" ? "active" : ""} onClick={() => setFilter("pending")}>未完成</button><button className={filter === "completed" ? "active" : ""} onClick={() => setFilter("completed")}>已完成</button><button className={filter === "deleted" ? "active" : ""} onClick={() => setFilter("deleted")}>回收站</button></div></div><section className="task-list">{visible.length ? visible.map((item) => <ScheduleCard key={item.id} item={item} completed={recordIds.has(item.id)} cardOpacity={cardOpacity} acrylic={acrylic} onOpen={() => setSelectedId(item.id)} onComplete={() => void onComplete(item.id, date, !recordIds.has(item.id))} onDelete={() => void onUpdate(item.id, { status: "deleted" })} onRestore={() => void onUpdate(item.id, { status: "active" })} onDeleteForever={() => void onDeleteForever(item.id)} />) : <div className="empty-state"><span className="empty-mark"><CalendarDays size={24} /></span><h3>这一天没有{filter === "completed" ? "已完成的任务" : filter === "deleted" ? "回收站内容" : "定期任务"}</h3><p>可切换日期，或新建一项计划。</p></div>}</section>{selected && <ScheduleDetailPanel item={selected} date={date} completed={recordIds.has(selected.id)} onClose={() => setSelectedId(null)} onEdit={() => { setSelectedId(null); setEditor(selected); }} onComplete={() => void onComplete(selected.id, date, !recordIds.has(selected.id))} onDelete={() => void onUpdate(selected.id, { status: "deleted" }).then(() => setSelectedId(null))} onRestore={() => void onUpdate(selected.id, { status: "active" }).then(() => setSelectedId(null))} onDeleteForever={() => void onDeleteForever(selected.id).then(() => setSelectedId(null))} />}{editor && <ScheduleEditor initial={editor === "new" ? undefined : editor} saving={saving} onClose={() => setEditor(null)} onSave={(value) => void save(value)} />}</div>;
 }
 
 function DiaryEditor({ date, initialContent, onSave }: { date: string; initialContent: string; onSave: (date: string, content: string) => Promise<void> }) {
@@ -523,6 +557,7 @@ export default function TodoApp() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationEnabled, setNotificationEnabled] = useState(readNotificationsEnabled);
+  const [reminderNotice, setReminderNotice] = useState<ReminderNotice | null>(null);
   const notificationHistory = useRef(readNotificationHistory());
   const [localBackgroundUrl, setLocalBackgroundUrl] = useState<string | null>(null);
   const backgroundObjectUrl = useRef<string | null>(null);
@@ -551,10 +586,13 @@ export default function TodoApp() {
   useEffect(() => () => { if (backgroundObjectUrl.current) URL.revokeObjectURL(backgroundObjectUrl.current); }, []);
   useEffect(() => {
     const receiveNativePermission = (event: Event) => {
-      const granted = (event as CustomEvent<string>).detail === "granted";
+      const state = (event as CustomEvent<string>).detail;
+      if (state !== "granted" && state !== "denied") return;
+      const granted = state === "granted";
       localStorage.setItem(NOTIFICATION_KEY, String(granted)); setNotificationEnabled(granted);
       if (!granted) { notificationHistory.current.clear(); writeNotificationHistory(notificationHistory.current); }
       setNotice(granted ? "系统通知权限已开启" : "系统通知权限未开启，请在手机设置中允许记时发送通知");
+      if (granted) void showDeviceNotification("记时提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
       window.setTimeout(() => setNotice(""), 2600);
     };
     window.addEventListener("jishi-native-notification-permission", receiveNativePermission);
@@ -562,10 +600,14 @@ export default function TodoApp() {
   }, []);
   useEffect(() => {
     const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
-    if (!data || !notificationEnabled || !notificationsSupported() || (!native && Notification.permission !== "granted")) return;
+    if (!data || !notificationEnabled) return;
     const check = () => {
       const now = Date.now();
-      const sendOnce = (key: string, title: string, body: string) => { if (notificationHistory.current.has(key)) return; notificationHistory.current.add(key); void showDeviceNotification(title, body, key).then(() => writeNotificationHistory(notificationHistory.current)).catch(() => notificationHistory.current.delete(key)); };
+      const sendOnce = (key: string, title: string, body: string) => {
+        if (notificationHistory.current.has(key)) return;
+        notificationHistory.current.add(key); writeNotificationHistory(notificationHistory.current); setReminderNotice({ title, body });
+        if (notificationsSupported() && (native || Notification.permission === "granted")) void showDeviceNotification(title, body, key).catch(() => setError("系统通知发送失败，请检查此设备的通知权限"));
+      };
       data.todos.filter((todo) => todo.status === "active" && todo.deadline).forEach((todo) => {
         const deadline = new Date(todo.deadline!).getTime();
         if (!Number.isFinite(deadline)) return;
@@ -574,13 +616,18 @@ export default function TodoApp() {
         if (reachedOffset) sendOnce(`todo:${todo.id}:reminder:${reachedOffset.moment}`, todo.title, `${dateTime(todo.deadline)} 截止`);
       });
       const today = localDateKey(); const completedIds = new Set(data.scheduleRecords.filter((record) => record.occurrenceDate === today).map((record) => record.itemId));
-      data.schedules.filter((item) => item.kind === "routine" && item.status === "active" && item.timeOfDay && occursOn(item, today) && !completedIds.has(item.id)).forEach((item) => {
-        const moment = new Date(`${today}T${item.timeOfDay}`).getTime(); if (moment <= now) sendOnce(`routine:${item.id}:${today}`, item.title, `定期任务时间：${item.timeOfDay}`);
+      data.schedules.filter((item) => item.status === "active" && item.timeOfDay && occursOn(item, today) && !completedIds.has(item.id)).forEach((item) => {
+        const moment = new Date(`${today}T${item.timeOfDay}`).getTime(); if (moment <= now) sendOnce(`schedule:${item.id}:${today}`, item.title, `定期任务时间：${item.timeOfDay}`);
       });
     };
     const checkWhenVisible = () => { if (document.visibilityState === "visible") check(); };
     check(); const timer = window.setInterval(check, 30_000); document.addEventListener("visibilitychange", checkWhenVisible); window.addEventListener("focus", check);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", checkWhenVisible); window.removeEventListener("focus", check); };
+  }, [data, notificationEnabled]);
+  useEffect(() => {
+    const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
+    if (!data || !native?.syncReminders) return;
+    native.syncReminders(JSON.stringify(notificationEnabled ? upcomingNativeReminders(data) : []));
   }, [data, notificationEnabled]);
 
   const settings: SettingsShape = { ...normalizedAppearance(data?.user.settings), backgroundUrl: localBackgroundUrl || undefined };
@@ -609,14 +656,32 @@ export default function TodoApp() {
       localStorage.setItem(NOTIFICATION_KEY, "false"); setNotificationEnabled(false);
       flash("提醒已关闭：本设备不会再弹出待办通知"); return;
     }
-    if (!notificationsSupported()) { flash("此设备暂不支持网页通知，待办仍会正常同步"); return; }
     const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
+    if (native?.requestNotificationPermission) {
+      const permission = await native.requestNotificationPermission();
+      if (permission === "granted" || permission === "denied") window.dispatchEvent(new CustomEvent("jishi-native-notification-permission", { detail: permission }));
+      else flash("请在系统提示中允许记时发送通知");
+      return;
+    }
+    if (!("Notification" in window)) {
+      localStorage.setItem(NOTIFICATION_KEY, "true"); setNotificationEnabled(true);
+      flash("页面内提醒已开启；此浏览器不支持系统通知"); return;
+    }
     const permission = native ? "granted" : Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
     if (permission === "granted") {
       await showDeviceNotification("记时提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
       localStorage.setItem(NOTIFICATION_KEY, "true"); setNotificationEnabled(true);
       flash("提醒已开启，并已发送一条测试通知");
     } else flash("提醒未开启：请在系统设置中允许此应用发送通知");
+  };
+  const testNotifications = async () => {
+    if (!notificationEnabled) { await toggleNotifications(); return; }
+    const message = { title: "记时测试提醒", body: "弹窗和系统通知均已成功连接。" };
+    setReminderNotice(message);
+    if (notificationsSupported()) {
+      try { await showDeviceNotification(message.title, message.body, `test:${Date.now()}`); flash("测试弹窗和系统通知已发送"); }
+      catch { flash("测试弹窗已显示；系统通知被设备拦截"); }
+    } else flash("测试弹窗已显示；此浏览器不支持系统通知");
   };
   const mutateTodo = async (id: string, patch: Record<string, unknown>) => {
     try {
@@ -645,7 +710,7 @@ export default function TodoApp() {
   };
   const createSchedule = async (value: ScheduleEditorValue) => {
     const result = await api<{ item: ScheduleItem }>("/api/schedules", { method: "POST", body: JSON.stringify(value) });
-    setData((old) => old ? ({ ...old, schedules: [result.item, ...old.schedules] }) : old); flash(value.kind === "habit" ? "习惯已创建" : "定期任务已创建");
+    setData((old) => old ? ({ ...old, schedules: [result.item, ...old.schedules] }) : old); flash("定期任务已创建");
   };
   const updateSchedule = async (id: string, patch: Partial<ScheduleEditorValue> & { status?: "active" | "deleted" }) => {
     const result = await api<{ item: ScheduleItem }>(`/api/schedules/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
@@ -697,7 +762,7 @@ export default function TodoApp() {
   return <div className={`app-shell acrylic-${settings.acrylic} ${settings.backgroundUrl ? "has-custom-background" : ""} ${settings.backgroundAcrylic ? "background-acrylic" : ""}`} style={{ "--accent": settings.accent, "--card-opacity": settings.cardOpacity / 100, "--background-opacity": settings.backgroundOpacity / 100, "--background-overlay": (100 - settings.backgroundOpacity) / 100, "--app-background-image": settings.backgroundUrl ? `url(${settings.backgroundUrl})` : "none" } as React.CSSProperties}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark small">记</span><div><strong>记时</strong><small>把今天安放好</small></div></div>
-      <nav className="side-nav" aria-label="主导航"><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "habits" ? "active" : ""} onClick={() => setSection("habits")}><Repeat2 size={19} /><span>习惯</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
+      <nav className="side-nav" aria-label="主导航"><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
       <div className="sidebar-groups"><span>快捷查看</span><button onClick={() => { setSection("todos"); setStatusFilter("completed"); }}><Check size={17} />已完成</button><button onClick={() => setSection("trash")}><Trash2 size={17} />回收站</button><button onClick={() => setSection("settings")}><Settings size={17} />设置</button></div>
       <div className="sidebar-profile"><span className="avatar">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="38px" unoptimized /> : <DefaultAvatar />}</span><div><strong>{data.user.name}</strong><small>已同步</small></div><ChevronRight size={17} /></div>
     </aside>
@@ -710,15 +775,15 @@ export default function TodoApp() {
         {filtersOpen && <div className="filter-panel"><label><span>分类</span><select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="">全部分类</option>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label><span>重要程度</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="">全部程度</option>{Object.entries(priorityMeta).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select></label><label><span>截止范围</span><select value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}><option value="all">全部时间</option><option value="today">今天截止</option><option value="week">7 天内</option><option value="overdue">已逾期</option></select></label><button className="text-button" onClick={() => { setCategoryFilter(""); setPriorityFilter(""); setDateFilter("all"); }}><RotateCcw size={15} />重置</button></div>}
         <section className="task-list" aria-live="polite">{visibleTodos.length ? visibleTodos.map((todo) => <SwipeTask key={todo.id} todo={todo} category={todo.categoryId ? categoryMap.get(todo.categoryId) : undefined} onOpen={() => setSelectedId(todo.id)} onEdit={() => setEditor(todo)} onStatus={(status) => void mutateTodo(todo.id, { status })} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} />) : <EmptyState kind={section === "trash" ? "deleted" : statusFilter} />}</section>
       </>}
-      {section === "routines" && <ScheduleBoard kind="routine" items={data.schedules} records={data.scheduleRecords} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} onCreate={createSchedule} onUpdate={updateSchedule} onComplete={completeSchedule} onDeleteForever={deleteScheduleForever} />}
-      {section === "habits" && <ScheduleBoard kind="habit" items={data.schedules} records={data.scheduleRecords} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} onCreate={createSchedule} onUpdate={updateSchedule} onComplete={completeSchedule} onDeleteForever={deleteScheduleForever} />}
+      {section === "routines" && <ScheduleBoard items={data.schedules} records={data.scheduleRecords} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} onCreate={createSchedule} onUpdate={updateSchedule} onComplete={completeSchedule} onDeleteForever={deleteScheduleForever} />}
       {section === "diary" && <DiaryBoard entries={data.diaryEntries} onSave={saveDiary} />}
-      {(section === "mine" || section === "settings") && <ProfileSettings data={data} settings={settings} section={section} onSection={setSection} onSaveProfile={saveProfile} onSaveAppearance={saveAppearance} onPreviewSettings={previewSettings} onUpload={uploadImage} onRemoveBackground={removeBackground} onReload={load} setData={setData} flash={flash} />}
+      {(section === "mine" || section === "settings") && <ProfileSettings data={data} settings={settings} section={section} notificationEnabled={notificationEnabled} onToggleNotifications={toggleNotifications} onTestNotifications={testNotifications} onSection={setSection} onSaveProfile={saveProfile} onSaveAppearance={saveAppearance} onPreviewSettings={previewSettings} onUpload={uploadImage} onRemoveBackground={removeBackground} onReload={load} setData={setData} flash={flash} />}
       {selected && <DetailPanel todo={selected} category={selected.categoryId ? categoryMap.get(selected.categoryId) : undefined} preset={selected.reminderPresetId ? presetMap.get(selected.reminderPresetId) : undefined} onClose={() => setSelectedId(null)} onEdit={() => setEditor(selected)} onStatus={(status) => void mutateTodo(selected.id, { status })} onDeleteForever={() => void deleteForever(selected)} />}
     </main>
 
-    <nav className="bottom-nav module-nav" aria-label="移动端主导航"><button className={section === "todos" || section === "trash" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={20} /><span>待办</span></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={20} /><span>定期</span></button><button className={section === "habits" ? "active" : ""} onClick={() => setSection("habits")}><Repeat2 size={20} /><span>习惯</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={20} /><span>日记</span></button><button className={section === "mine" || section === "settings" ? "active" : ""} onClick={() => setSection("mine")}><UserRound size={20} /><span>我的</span></button></nav>
+    <nav className="bottom-nav module-nav" aria-label="移动端主导航"><button className={section === "todos" || section === "trash" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={20} /><span>待办</span></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={20} /><span>定期</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={20} /><span>日记</span></button><button className={section === "mine" || section === "settings" ? "active" : ""} onClick={() => setSection("mine")}><UserRound size={20} /><span>我的</span></button></nav>
     {editor && <TodoEditor initial={editor === "new" ? undefined : editor} categories={data.categories} presets={data.reminderPresets} onClose={() => setEditor(null)} onSave={(value) => void saveTodo(value)} saving={saving} />}
+    {reminderNotice && <section className="reminder-popup" role="alertdialog" aria-live="assertive" aria-label="记时提醒"><span className="reminder-popup-icon"><Bell size={21} /></span><div><strong>{reminderNotice.title}</strong><p>{reminderNotice.body}</p></div><button className="icon-button" onClick={() => setReminderNotice(null)} aria-label="关闭提醒弹窗"><X size={18} /></button></section>}
     {notice && <div className="toast"><Check size={17} />{notice}</div>}{error && <div className="error-toast"><span>{error}</span><button onClick={() => setError("")} aria-label="关闭错误"><X size={16} /></button></div>}
   </div>;
 }
@@ -743,8 +808,9 @@ function PresetSettingRow({ preset, canDelete, onSave, onDelete }: { preset: Pre
   return <div className="manage-row preset"><input aria-label={`${preset.name}提醒组名称`} value={name} maxLength={20} onChange={(event) => setName(event.target.value)} /><ReminderOffsetsEditor value={offsets} onChange={setOffsets} compact /><button className="button secondary compact" disabled={busy || !name.trim() || !offsets.length} onClick={() => void run(() => onSave(preset.id, { name, offsets }))}>保存</button><button className="icon-button danger-quiet" disabled={busy || !canDelete} title={canDelete ? "删除提醒组" : "至少保留一个提醒组"} onClick={() => void run(() => onDelete(preset.id))}><Trash2 size={17} /></button>{preset.isDefault ? <small className="default-badge">默认</small> : null}{error && <small className="row-error">{error}</small>}</div>;
 }
 
-function ProfileSettings({ data, settings, section, onSection, onSaveProfile, onSaveAppearance, onPreviewSettings, onUpload, onRemoveBackground, onReload, setData, flash }: {
-  data: Bootstrap; settings: SettingsShape; section: "mine" | "settings"; onSection: (value: Section) => void;
+function ProfileSettings({ data, settings, section, notificationEnabled, onToggleNotifications, onTestNotifications, onSection, onSaveProfile, onSaveAppearance, onPreviewSettings, onUpload, onRemoveBackground, onReload, setData, flash }: {
+  data: Bootstrap; settings: SettingsShape; section: "mine" | "settings"; notificationEnabled: boolean;
+  onToggleNotifications: () => Promise<void>; onTestNotifications: () => Promise<void>; onSection: (value: Section) => void;
   onSaveProfile: (patch: { name?: string; avatarUrl?: string }) => Promise<void>;
   onSaveAppearance: (settings: SettingsShape) => Promise<void>;
   onPreviewSettings: (settings: SettingsShape) => void;
@@ -755,6 +821,7 @@ function ProfileSettings({ data, settings, section, onSection, onSaveProfile, on
   const [backgroundBusy, setBackgroundBusy] = useState(false); const [backgroundError, setBackgroundError] = useState("");
   const [dataError, setDataError] = useState("");
   const [cropTarget, setCropTarget] = useState<{ file: File; kind: "avatar" | "background" } | null>(null);
+  const nativeNotifications = typeof window !== "undefined" && !!(window as Window & { JishiNative?: NativeBridge }).JishiNative;
   const committedAppearance = useRef({ cardOpacity: settings.cardOpacity, backgroundOpacity: settings.backgroundOpacity, acrylic: settings.acrylic, backgroundAcrylic: settings.backgroundAcrylic });
   const [deviceLogin, setDeviceLogin] = useState(readDeviceLogin);
   const updateDeviceLogin = (patch: Partial<DeviceLogin>) => { const next = { ...deviceLogin, ...patch }; if (!next.rememberAccount) Object.assign(next, { rememberPassword: false, autoLogin: false, email: "", password: "" }); if (!next.rememberPassword) Object.assign(next, { autoLogin: false, password: "" }); writeDeviceLogin(next); setDeviceLogin(next); };
@@ -811,7 +878,8 @@ function ProfileSettings({ data, settings, section, onSection, onSaveProfile, on
       <div className="background-picker">{settings.backgroundUrl ? <div className={`background-preview ${settings.backgroundAcrylic ? "acrylic" : ""}`} role="img" aria-label="当前自定义背景预览" style={{ backgroundImage: `linear-gradient(rgb(244 240 232 / ${1 - settings.backgroundOpacity / 100})), url(${settings.backgroundUrl})` }} /> : <div className="background-empty"><ImagePlus size={24} /><span>还没有本机背景</span></div>}<div className="background-actions"><label className={`upload-button ${backgroundBusy ? "disabled" : ""}`} aria-label={settings.backgroundUrl ? "更换背景图片" : "选择背景图片"}><Crop size={18} />{settings.backgroundUrl ? "更换并裁选图片" : "选择并裁选图片"}<input aria-label="选择背景图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={backgroundBusy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "background"); }} /></label>{settings.backgroundUrl && <button className="button secondary background-remove" disabled={backgroundBusy} onClick={() => void clearBackground()}><Trash2 size={17} />移除背景</button>}</div><small className="background-hint">支持 JPEG、PNG、WebP、GIF，最大 5MB；裁选后以固定比例等比保存到本机</small>{backgroundError && <p className="background-error" role="alert">{backgroundError}</p>}</div>
     </section>
     <section className="settings-card"><div className="settings-title"><Filter size={20} /><div><h2>待办分类</h2><p>系统自带分类也可以修改名称和颜色；至少保留一个分类</p></div></div><div className="manage-list">{data.categories.map((category) => <CategorySettingRow key={category.id} category={category} canDelete={data.categories.length > 1} onSave={updateCategory} onDelete={deleteCategory} />)}</div><div className="inline-form"><input value={categoryName} maxLength={12} onChange={(event) => setCategoryName(event.target.value)} placeholder="新增分类，如：游戏" /><button className="button secondary" disabled={!categoryName.trim()} onClick={() => void addCategory()}><Plus size={17} />添加</button></div></section>
+    <section className="settings-card"><div className="settings-title"><Bell size={20} /><div><h2>弹窗与系统通知</h2><p>{nativeNotifications ? "桌面或手机客户端可在后台保持定时提醒" : "网页版打开时会显示应用内弹窗，并尝试发送浏览器系统通知"}</p></div></div><div className="setting-line"><div><strong>{notificationEnabled ? "提醒已开启" : "提醒已关闭"}</strong><small>{notificationsSupported() ? notificationEnabled ? "可点击测试，确认系统通知没有被设备拦截" : "开启时系统会请求通知权限" : "当前浏览器不支持系统通知，但仍可使用页面内提醒"}</small></div><button role="switch" aria-checked={notificationEnabled} className={`switch ${notificationEnabled ? "on" : ""}`} onClick={() => void onToggleNotifications()}><span /></button></div><div className="notification-actions"><button className="button secondary" onClick={() => void onTestNotifications()}>发送测试提醒</button><small>若测试弹窗出现但系统通知没有出现，请在设备的应用通知设置中允许“记时”。</small></div></section>
     <section className="settings-card"><div className="settings-title"><Bell size={20} /><div><h2>自定义提示时间</h2><p>每个时间点都可单独选择天、小时或分钟，最多设置 8 个</p></div></div><div className="manage-list">{data.reminderPresets.map((preset) => <PresetSettingRow key={preset.id} preset={preset} canDelete={data.reminderPresets.length > 1} onSave={updatePreset} onDelete={deletePreset} />)}</div><div className="new-preset"><input value={presetName} maxLength={20} onChange={(event) => setPresetName(event.target.value)} placeholder="提醒组名称，如：考试" /><ReminderOffsetsEditor value={newOffsets} onChange={setNewOffsets} /><button className="button secondary" disabled={!presetName.trim() || !newOffsets.length} onClick={() => void addPreset()}><Plus size={17} />添加提醒组</button></div></section>
-    <section className="settings-card"><div className="settings-title"><Download size={20} /><div><h2>数据导入与导出</h2><p>账户配置不包含密码；本机外观和背景不会上传或导出</p></div></div><div className="data-transfer-list">{([{ key: "config", label: "账户配置" }, { key: "todos", label: "待办" }, { key: "routines", label: "定期任务" }, { key: "habits", label: "习惯" }, { key: "diary", label: "日记" }] as const).map((item) => <div className="data-transfer-row" key={item.key}><strong>{item.label}</strong><div><button className="button secondary compact" onClick={() => void exportSection(item.key, "json").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileJson size={15} />JSON</button><button className="button secondary compact" onClick={() => void exportSection(item.key, "md").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileText size={15} />MD</button><label className="button secondary compact data-import"><Upload size={15} />导入 JSON<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSection(item.key, file).catch((reason) => setDataError(reason instanceof Error ? reason.message : "导入失败")); }} /></label></div></div>)}</div>{dataError && <p className="background-error" role="alert">{dataError}</p>}<small className="input-hint data-warning">导入前会再次确认，并替换当前账户中对应模块的数据；建议先导出 JSON 备份。</small></section>
+    <section className="settings-card"><div className="settings-title"><Download size={20} /><div><h2>数据导入与导出</h2><p>账户配置不包含密码；本机外观和背景不会上传或导出</p></div></div><div className="data-transfer-list">{([{ key: "config", label: "账户配置" }, { key: "todos", label: "待办" }, { key: "schedules", label: "定期任务" }, { key: "diary", label: "日记" }] as const).map((item) => <div className="data-transfer-row" key={item.key}><strong>{item.label}</strong><div><button className="button secondary compact" onClick={() => void exportSection(item.key, "json").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileJson size={15} />JSON</button><button className="button secondary compact" onClick={() => void exportSection(item.key, "md").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileText size={15} />MD</button><label className="button secondary compact data-import"><Upload size={15} />导入 JSON<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSection(item.key, file).catch((reason) => setDataError(reason instanceof Error ? reason.message : "导入失败")); }} /></label></div></div>)}</div>{dataError && <p className="background-error" role="alert">{dataError}</p>}<small className="input-hint data-warning">导入前会再次确认，并替换当前账户中对应模块的数据；建议先导出 JSON 备份。</small></section>
   </div>{cropModal}</>;
 }

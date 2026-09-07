@@ -314,10 +314,10 @@ async function schedules(request: Request, env: Env, user: User, id?: string) {
     const recurrence = String(body.recurrence || "daily");
     const startDate = String(body.startDate || now.slice(0, 10));
     const weekdays = normalizedWeekdays(body.weekdays);
-    const timeOfDay = kind === "routine" ? String(body.timeOfDay || "09:00") : null;
+    const timeOfDay = kind === "routine" && body.timeOfDay ? String(body.timeOfDay) : null;
     if (!title || title.length > 80) return response(request, env, { error: "计划名称应为 1 至 80 个字" }, 400);
     if (!new Set(["once", "daily", "weekly", "custom", "holidays"]).has(recurrence)) return response(request, env, { error: "重复规则无效" }, 400);
-    if (!validDate(startDate) || (kind === "routine" && !validTime(timeOfDay))) return response(request, env, { error: "日期或时间格式无效" }, 400);
+    if (!validDate(startDate) || (timeOfDay !== null && !validTime(timeOfDay))) return response(request, env, { error: "日期或时间格式无效" }, 400);
     if ((recurrence === "weekly" || recurrence === "custom") && !weekdays.length) return response(request, env, { error: "请至少选择一个星期" }, 400);
     const itemId = crypto.randomUUID();
     await env.DB.prepare("INSERT INTO schedule_items (id,user_id,kind,title,notes,recurrence,start_date,time_of_day,weekdays_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'active',?,?)")
@@ -341,10 +341,11 @@ async function schedules(request: Request, env: Env, user: User, id?: string) {
   const recurrence = String(body.recurrence === undefined ? current.recurrence : body.recurrence);
   const startDate = String(body.startDate === undefined ? current.start_date : body.startDate);
   const weekdays = body.weekdays === undefined ? JSON.parse(String(current.weekdays_json || "[]")) : normalizedWeekdays(body.weekdays);
-  const timeOfDay = current.kind === "routine" ? String(body.timeOfDay === undefined ? current.time_of_day : body.timeOfDay) : null;
+  const requestedTime = body.timeOfDay === undefined ? current.time_of_day : body.timeOfDay;
+  const timeOfDay = current.kind === "routine" && requestedTime ? String(requestedTime) : null;
   const status = String(body.status === undefined ? current.status : body.status);
   if (!title || title.length > 80 || !new Set(["once", "daily", "weekly", "custom", "holidays"]).has(recurrence)) return response(request, env, { error: "计划内容或重复规则无效" }, 400);
-  if (!validDate(startDate) || (current.kind === "routine" && !validTime(timeOfDay)) || !new Set(["active", "deleted"]).has(status)) return response(request, env, { error: "计划日期、时间或状态无效" }, 400);
+  if (!validDate(startDate) || (timeOfDay !== null && !validTime(timeOfDay)) || !new Set(["active", "deleted"]).has(status)) return response(request, env, { error: "计划日期、时间或状态无效" }, 400);
   if ((recurrence === "weekly" || recurrence === "custom") && !weekdays.length) return response(request, env, { error: "请至少选择一个星期" }, 400);
   const deletedAt = status === "deleted" ? (current.deleted_at || now) : null;
   await env.DB.prepare("UPDATE schedule_items SET title=?,notes=?,recurrence=?,start_date=?,time_of_day=?,weekdays_json=?,status=?,deleted_at=?,updated_at=? WHERE id=? AND user_id=?")
@@ -395,11 +396,14 @@ async function snapshot(env: Env, user: User, section: string) {
     const rows = await env.DB.prepare("SELECT t.*,c.name category_name,p.name preset_name FROM todos t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN reminder_presets p ON p.id=t.reminder_preset_id WHERE t.user_id=? ORDER BY t.created_at").bind(user.id).all<Json>();
     return { items: rows.results.map((row) => ({ ...todo(row), categoryName: row.category_name, presetName: row.preset_name })) };
   }
-  if (section === "routines" || section === "habits") {
+  if (section === "schedules" || section === "routines" || section === "habits") {
     const kind = section === "habits" ? "habit" : "routine";
+    const kindFilter = section === "schedules" ? "" : " AND kind=?";
+    const itemQuery = env.DB.prepare(`SELECT * FROM schedule_items WHERE user_id=?${kindFilter} ORDER BY created_at`);
+    const recordQuery = env.DB.prepare(`SELECT r.* FROM schedule_records r JOIN schedule_items i ON i.id=r.item_id WHERE r.user_id=?${section === "schedules" ? "" : " AND i.kind=?"} ORDER BY r.occurrence_date`);
     const [items, records] = await Promise.all([
-      env.DB.prepare("SELECT * FROM schedule_items WHERE user_id=? AND kind=? ORDER BY created_at").bind(user.id, kind).all<Json>(),
-      env.DB.prepare("SELECT r.* FROM schedule_records r JOIN schedule_items i ON i.id=r.item_id WHERE r.user_id=? AND i.kind=? ORDER BY r.occurrence_date").bind(user.id, kind).all<Json>(),
+      (section === "schedules" ? itemQuery.bind(user.id) : itemQuery.bind(user.id, kind)).all<Json>(),
+      (section === "schedules" ? recordQuery.bind(user.id) : recordQuery.bind(user.id, kind)).all<Json>(),
     ]);
     return { items: items.results.map(scheduleItem), records: records.results.map(scheduleRecord) };
   }
@@ -411,7 +415,7 @@ async function snapshot(env: Env, user: User, section: string) {
 }
 
 function markdownSnapshot(section: string, data: Json) {
-  const title: Record<string, string> = { config: "账户配置", todos: "待办", routines: "定期任务", habits: "习惯", diary: "日记" };
+  const title: Record<string, string> = { config: "账户配置", todos: "待办", schedules: "定期任务", routines: "定期任务", habits: "习惯", diary: "日记" };
   const lines = [`# 记时 · ${title[section] || section}`, "", `导出时间：${new Date().toISOString()}`, ""];
   if (section === "config") return [...lines, `- 昵称：${data.name || ""}`, `- 设置：\`${JSON.stringify(data.settings || {})}\``, "", "## 分类", ...((data.categories as Json[] || []).map((item) => `- ${item.name} (${item.color})`)), "", "## 提醒组", ...((data.reminderPresets as Json[] || []).map((item) => `- ${item.name}：${(item.offsets as number[] || []).join(", ")} 分钟`))].join("\n");
   if (section === "diary") return [...lines, ...((data.entries as Json[] || []).flatMap((item) => [`## ${item.entryDate}`, "", String(item.content || ""), ""]))].join("\n");
@@ -453,10 +457,11 @@ async function importData(request: Request, env: Env, user: User) {
     const categoryMap = new Map(categories.results.map((item) => [String(item.name), String(item.id)])); const presetMap = new Map(presets.results.map((item) => [String(item.name), item]));
     statements.push(env.DB.prepare("DELETE FROM todos WHERE user_id=?").bind(user.id));
     for (const item of items) { const title = String(item.title || "").trim().slice(0, 60); if (!title) continue; const preset = presetMap.get(String(item.presetName || "")); const status = new Set(["active", "completed", "deleted"]).has(String(item.status)) ? String(item.status) : "active"; statements.push(env.DB.prepare("INSERT INTO todos (id,user_id,title,content,deadline,reminder_preset_id,reminder_offsets_json,category_id,priority,notes,status,created_at,completed_at,deleted_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(), user.id, title, String(item.content || ""), item.deadline || null, preset?.id || null, preset?.offsets_json || JSON.stringify(Array.isArray(item.reminderOffsets) ? item.reminderOffsets : []), categoryMap.get(String(item.categoryName || "")) || null, new Set(["low", "normal", "important", "urgent"]).has(String(item.priority)) ? item.priority : "normal", String(item.notes || ""), status, String(item.createdAt || now), item.completedAt || null, item.deletedAt || null, now)); }
-  } else if (section === "routines" || section === "habits") {
-    const kind = section === "habits" ? "habit" : "routine"; const items = Array.isArray(data.items) ? data.items.slice(0, 2000) as Json[] : []; const records = Array.isArray(data.records) ? data.records.slice(0, 20000) as Json[] : []; const idMap = new Map<string, string>();
-    statements.push(env.DB.prepare("DELETE FROM schedule_records WHERE user_id=? AND item_id IN (SELECT id FROM schedule_items WHERE user_id=? AND kind=?)").bind(user.id, user.id, kind), env.DB.prepare("DELETE FROM schedule_items WHERE user_id=? AND kind=?").bind(user.id, kind));
-    for (const item of items) { const title = String(item.title || "").trim().slice(0, 80); if (!title || !validDate(item.startDate)) continue; const recurrence = new Set(["once", "daily", "weekly", "custom", "holidays"]).has(String(item.recurrence)) ? String(item.recurrence) : "daily"; const newId = crypto.randomUUID(); idMap.set(String(item.id), newId); statements.push(env.DB.prepare("INSERT INTO schedule_items (id,user_id,kind,title,notes,recurrence,start_date,time_of_day,weekdays_json,status,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(newId, user.id, kind, title, String(item.notes || "").slice(0, 2000), recurrence, item.startDate, kind === "routine" && validTime(item.timeOfDay) ? item.timeOfDay : kind === "routine" ? "09:00" : null, JSON.stringify(normalizedWeekdays(item.weekdays)), item.status === "deleted" ? "deleted" : "active", String(item.createdAt || now), now, item.status === "deleted" ? String(item.deletedAt || now) : null)); }
+  } else if (section === "schedules" || section === "routines" || section === "habits") {
+    const legacyKind = section === "habits" ? "habit" : "routine"; const items = Array.isArray(data.items) ? data.items.slice(0, 2000) as Json[] : []; const records = Array.isArray(data.records) ? data.records.slice(0, 20000) as Json[] : []; const idMap = new Map<string, string>();
+    if (section === "schedules") statements.push(env.DB.prepare("DELETE FROM schedule_records WHERE user_id=?").bind(user.id), env.DB.prepare("DELETE FROM schedule_items WHERE user_id=?").bind(user.id));
+    else statements.push(env.DB.prepare("DELETE FROM schedule_records WHERE user_id=? AND item_id IN (SELECT id FROM schedule_items WHERE user_id=? AND kind=?)").bind(user.id, user.id, legacyKind), env.DB.prepare("DELETE FROM schedule_items WHERE user_id=? AND kind=?").bind(user.id, legacyKind));
+    for (const item of items) { const title = String(item.title || "").trim().slice(0, 80); if (!title || !validDate(item.startDate)) continue; const recurrence = new Set(["once", "daily", "weekly", "custom", "holidays"]).has(String(item.recurrence)) ? String(item.recurrence) : "daily"; const kind = section === "schedules" && item.kind === "habit" ? "habit" : legacyKind; const newId = crypto.randomUUID(); idMap.set(String(item.id), newId); statements.push(env.DB.prepare("INSERT INTO schedule_items (id,user_id,kind,title,notes,recurrence,start_date,time_of_day,weekdays_json,status,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(newId, user.id, kind, title, String(item.notes || "").slice(0, 2000), recurrence, item.startDate, kind === "routine" && validTime(item.timeOfDay) ? item.timeOfDay : null, JSON.stringify(normalizedWeekdays(item.weekdays)), item.status === "deleted" ? "deleted" : "active", String(item.createdAt || now), now, item.status === "deleted" ? String(item.deletedAt || now) : null)); }
     for (const record of records) { const itemId = idMap.get(String(record.itemId)); if (itemId && validDate(record.occurrenceDate)) statements.push(env.DB.prepare("INSERT OR IGNORE INTO schedule_records (id,user_id,item_id,occurrence_date,completed_at) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), user.id, itemId, record.occurrenceDate, String(record.completedAt || now))); }
   } else if (section === "diary") {
     const entries = Array.isArray(data.entries) ? data.entries.slice(0, 10000) as Json[] : []; statements.push(env.DB.prepare("DELETE FROM diary_entries WHERE user_id=?").bind(user.id));

@@ -54,7 +54,7 @@ test("includes product metadata and installable shell", async () => {
 });
 
 test("keeps the reported interaction regressions covered", async () => {
-  const [app, css, server, migration, androidConfig, offlinePage, androidActivity, androidManifest] = await Promise.all([
+  const [app, css, server, migration, androidConfig, offlinePage, androidActivity, androidManifest, androidScheduler, androidBootReceiver, windowsMain, windowsPreload, harmonyPage, harmonyApp] = await Promise.all([
     readFile(new URL("../app/TodoApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../../../server/src/index.ts", import.meta.url), "utf8"),
@@ -63,6 +63,12 @@ test("keeps the reported interaction regressions covered", async () => {
     readFile(new URL("../../android/www/offline.html", import.meta.url), "utf8"),
     readFile(new URL("../../android/android/app/src/main/java/cn/jishi/todo/MainActivity.java", import.meta.url), "utf8"),
     readFile(new URL("../../android/android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8"),
+    readFile(new URL("../../android/android/app/src/main/java/cn/jishi/todo/NotificationScheduler.java", import.meta.url), "utf8"),
+    readFile(new URL("../../android/android/app/src/main/java/cn/jishi/todo/BootReceiver.java", import.meta.url), "utf8"),
+    readFile(new URL("../../windows/main.cjs", import.meta.url), "utf8"),
+    readFile(new URL("../../windows/preload.cjs", import.meta.url), "utf8"),
+    readFile(new URL("../../harmony/entry/src/main/ets/pages/Index.ets", import.meta.url), "utf8"),
+    readFile(new URL("../../harmony/AppScope/app.json5", import.meta.url), "utf8"),
   ]);
   assert.match(app, /notificationsSupported\(\)/);
   assert.match(app, /detail-layer/);
@@ -98,6 +104,8 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(css, /\.main-surface\s*\{[^}]*padding:\s*28px 18px calc\(112px \+ env\(safe-area-inset-bottom\)\)/s);
   assert.match(app, /function ScheduleBoard/);
   assert.match(app, /function ScheduleDetailPanel/);
+  assert.doesNotMatch(app, /setSection\("habits"\)/);
+  assert.match(app, /key: "schedules", label: "定期任务"/);
   assert.match(app, /task-action-menu/);
   assert.match(app, /onEdit=\{\(\) => setEditor\(todo\)\}/);
   assert.match(app, /mobile-quick-menu/);
@@ -107,6 +115,9 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(app, /jishi-notification-history-v1/);
   assert.match(app, /document\.addEventListener\("visibilitychange"/);
   assert.match(app, /jishi-native-notification-permission/);
+  assert.match(app, /className="reminder-popup"/);
+  assert.match(app, /upcomingNativeReminders\(data\)/);
+  assert.match(app, /native\.syncReminders/);
   assert.match(app, /if \(deadline <= now\)/);
   assert.match(app, /function DiaryBoard/);
   assert.match(app, /\/api\/data\/export/);
@@ -131,14 +142,30 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(server, /CREATE TABLE IF NOT EXISTS schedule_items/);
   assert.match(server, /CREATE TABLE IF NOT EXISTS diary_entries/);
   assert.match(server, /\/api\/data\/import/);
+  assert.match(server, /section === "schedules"/);
   assert.match(migration, /CREATE TABLE `schedule_records`/);
   assert.match(androidConfig, /errorPath:\s*"offline\.html"/);
   assert.match(offlinePage, /重新连接主服务器/);
   assert.match(androidActivity, /addJavascriptInterface\(new JishiNativeBridge\(\), "JishiNative"\)/);
-  assert.match(androidActivity, /NotificationManagerCompat/);
+  assert.match(androidActivity, /NotificationScheduler\.show/);
   assert.match(androidActivity, /pendingNotifications/);
   assert.match(androidActivity, /evaluateJavascript/);
   assert.match(androidActivity, /DownloadManager\.Request/);
   assert.match(androidActivity, /CookieManager\.getInstance\(\)\.getCookie\(url\)/);
   assert.match(androidManifest, /android\.permission\.POST_NOTIFICATIONS/);
+  assert.match(androidManifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
+  assert.match(androidScheduler, /setExactAndAllowWhileIdle/);
+  assert.match(androidScheduler, /NotificationManagerCompat/);
+  assert.match(androidScheduler, /jishi-native-reminders/);
+  assert.match(androidBootReceiver, /ACTION_BOOT_COMPLETED/);
+  assert.match(windowsMain, /new Tray\(icon\)/);
+  assert.match(windowsMain, /jishi:sync-reminders/);
+  assert.match(windowsMain, /isTrustedSender/);
+  assert.match(windowsPreload, /exposeInMainWorld\("JishiNative"/);
+  assert.match(harmonyPage, /https:\/\/jishi\.awaqwq233\.com\//);
+  assert.match(harmonyPage, /javaScriptProxy/);
+  assert.match(harmonyPage, /onLoadIntercept/);
+  assert.match(harmonyPage, /getRequestUrl\(\)/);
+  assert.match(harmonyPage, /JishiHarmony\/0\.3\.0/);
+  assert.match(harmonyApp, /"versionName": "0\.3\.0"/);
 });
