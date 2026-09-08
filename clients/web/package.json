@@ -44,5 +44,8 @@
     "vite": "8.2.1",
     "wrangler": "4.122.0"
   },
+  "optionalDependencies": {
+    "@tailwindcss/oxide-linux-x64-gnu": "4.2.1"
+  },
   "type": "module"
 }
