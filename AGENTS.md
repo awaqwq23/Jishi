@@ -56,6 +56,7 @@
 - 运行 `npm audit --audit-level=high`；高危或严重问题不得发布。
 - 对登录、bootstrap、待办旧接口和新模块接口做契约检查；无效登录必须返回 JSON 401，绝不能返回 HTML 500。
 - `jishi-api` 运行时禁止再启动 `wrangler d1 execute --local --persist-to /var/lib/jishi` 等第二个 Wrangler 进程访问同一持久化目录；在线只读核验使用 SQLite 只读连接，写入/迁移操作必须由 systemd 的单一 API 实例执行或先停服务。
+- 修改 systemd 沙箱时，暂存启动测试必须覆盖完整的生产限制组合，不能只测试其中几项。Node/Wrangler 的网卡枚举需要 `AF_NETLINK`，限制地址族时必须保留，否则会报 `uv_interface_addresses ... error 97`。同时验证 API/Web 实际启动和 HTTP 健康检查。
 
 ## 生产部署流程
 
