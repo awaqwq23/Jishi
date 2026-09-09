@@ -1,6 +1,15 @@
 import { webview } from '@kit.ArkWeb';
 import { common } from '@kit.AbilityKit';
 import { notificationManager } from '@kit.NotificationKit';
+import { isTrustedJishiUrl } from './TrustedUrl';
+import { ReminderScheduler } from './ReminderScheduler';
+
+interface JishiNativeBridge {
+  notify: (title: string, body: string, key: string) => string;
+  requestNotificationPermission: () => string;
+  notificationPermissionState: () => string;
+  syncReminders: (payload: string) => void;
+}
 
 @Entry
 @Component
@@ -8,10 +17,13 @@ struct Index {
   controller: webview.WebviewController = new webview.WebviewController();
   @State currentUrl: string = 'https://jishi.awaqwq233.com/';
   @State loadFailed: boolean = false;
+  @State loading: boolean = true;
   private readonly primaryUrl: string = 'https://jishi.awaqwq233.com/';
   private readonly fallbackUrl: string = 'https://awaqwq233.com/note/';
-  private nativeBridge = {
+  private scheduler: ReminderScheduler = new ReminderScheduler();
+  private nativeBridge: JishiNativeBridge = {
     notify: (title: string, body: string, key: string): string => {
+      if (!this.bridgeAllowed() || typeof title !== 'string' || typeof body !== 'string' || typeof key !== 'string') return 'rejected';
       const request: notificationManager.NotificationRequest = {
         id: this.notificationId(key),
         content: {
@@ -23,6 +35,7 @@ struct Index {
       return 'queued';
     },
     requestNotificationPermission: (): string => {
+      if (!this.bridgeAllowed()) return 'denied';
       const context = getContext(this) as common.UIAbilityContext;
       notificationManager.requestEnableNotification(context)
         .then(() => this.emitPermission('granted'))
@@ -30,13 +43,30 @@ struct Index {
       return 'prompting';
     },
     notificationPermissionState: (): string => {
+      if (!this.bridgeAllowed()) return 'denied';
       return notificationManager.isNotificationEnabledSync() ? 'granted' : 'denied';
     },
-    syncReminders: (_payload: string): void => {
-      // The Web layer keeps foreground timers active. Background proxy reminders
-      // are enabled after the AppGallery capability is approved for this bundle.
+    syncReminders: (payload: string): void => {
+      if (!this.bridgeAllowed()) return;
+      this.scheduler.sync(payload, () => {
+        if (!this.bridgeAllowed()) return;
+        this.controller.runJavaScript("window.dispatchEvent(new Event('jishi-native-reminders-unavailable')); ").catch(() => {});
+      });
     }
   };
+
+  private bridgeAllowed(): boolean {
+    try { return !this.loadFailed && isTrustedJishiUrl(this.controller.getUrl()); }
+    catch (_) { return false; }
+  }
+
+  onBackPress(): boolean {
+    if (!this.loadFailed && this.controller.accessBackward()) {
+      this.controller.backward();
+      return true;
+    }
+    return false;
+  }
 
   private notificationId(key: string): number {
     let value: number = 0;
@@ -47,6 +77,7 @@ struct Index {
   }
 
   private emitPermission(state: string): void {
+    if (!this.bridgeAllowed()) return;
     this.controller.runJavaScript(
       `window.dispatchEvent(new CustomEvent('jishi-native-notification-permission',{detail:'${state}'}));`
     ).catch(() => {});
@@ -59,10 +90,11 @@ struct Index {
       return;
     }
     this.loadFailed = true;
+    this.loading = false;
   }
 
   private isTrustedUrl(url: string): boolean {
-    return url.startsWith(this.primaryUrl) || url.startsWith(this.fallbackUrl);
+    return isTrustedJishiUrl(url);
   }
 
   build() {
@@ -70,20 +102,24 @@ struct Index {
       Web({ src: this.currentUrl, controller: this.controller })
         .javaScriptAccess(true)
         .domStorageAccess(true)
+        .fileAccess(false)
         .mixedMode(MixedMode.None)
         .javaScriptProxy({
           object: this.nativeBridge,
           name: 'JishiNative',
           methodList: ['notify', 'requestNotificationPermission', 'notificationPermissionState', 'syncReminders'],
-          controller: this.controller
+          controller: this.controller,
+          permission: '{"javascriptProxyPermission":{"urlPermissionList":[{"scheme":"https","host":"jishi.awaqwq233.com","port":"443","path":"/"},{"scheme":"https","host":"awaqwq233.com","port":"443","path":"/note/"}]}}'
         })
         .onControllerAttached(() => {
           const userAgent: string = this.controller.getUserAgent();
-          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.0`);
+          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.1`);
         })
         .onPageBegin(() => {
           this.loadFailed = false;
+          this.loading = true;
         })
+        .onPageEnd(() => { this.loading = false; })
         .onLoadIntercept((event) => {
           return !this.isTrustedUrl(event.data.getRequestUrl());
         })
@@ -95,6 +131,10 @@ struct Index {
         })
         .width('100%')
         .height('100%')
+
+      if (this.loading && !this.loadFailed) {
+        LoadingProgress().width(40).height(40).color('#9e8d74')
+      }
 
       if (this.loadFailed) {
         Column({ space: 16 }) {
@@ -108,11 +148,13 @@ struct Index {
           Row({ space: 12 }) {
             Button('重试').onClick(() => {
               this.loadFailed = false;
+              this.loading = true;
               this.controller.refresh();
             })
             Button('切换主站').onClick(() => {
               this.currentUrl = this.currentUrl === this.primaryUrl ? this.fallbackUrl : this.primaryUrl;
               this.loadFailed = false;
+              this.loading = true;
             })
           }
         }

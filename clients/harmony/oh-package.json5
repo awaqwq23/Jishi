@@ -1,11 +1,11 @@
 {
   "modelVersion": "5.0.0",
   "name": "jishi-harmony",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "记时 HarmonyOS 客户端",
   "dependencies": {},
   "devDependencies": {
-    "@ohos/hvigor": "5.0.2",
-    "@ohos/hvigor-ohos-plugin": "5.0.2"
+    "@ohos/hvigor": "6.26.4",
+    "@ohos/hvigor-ohos-plugin": "6.26.4"
   }
 }

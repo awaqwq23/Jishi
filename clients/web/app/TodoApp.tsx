@@ -50,6 +50,11 @@ type NativeBridge = {
 };
 type ReminderNotice = { title: string; body: string };
 
+function clearNativeReminders() {
+  try { (window as Window & { JishiNative?: NativeBridge }).JishiNative?.syncReminders?.("[]"); }
+  catch { /* A disconnected native bridge must not prevent signing out. */ }
+}
+
 const priorityMeta: Record<Priority, { label: string; hint: string }> = {
   low: { label: "不重要", hint: "慢慢来" },
   normal: { label: "一般", hint: "照常安排" },
@@ -512,6 +517,7 @@ function DiaryBoard({ entries, onSave }: { entries: DiaryEntry[]; onSave: (date:
 }
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> }) {
+  useEffect(() => { clearNativeReminders(); }, []);
   const initialLogin = useMemo(() => readDeviceLogin(), []);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState(initialLogin.rememberAccount ? initialLogin.email : "");
@@ -563,6 +569,11 @@ export default function TodoApp() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationEnabled, setNotificationEnabled] = useState(readNotificationsEnabled);
   const [reminderNotice, setReminderNotice] = useState<ReminderNotice | null>(null);
+  useEffect(() => {
+    const unavailable = () => setNotice("系统未允许后台定时提醒，请检查通知权限；保持应用打开仍可收到页面提醒。");
+    window.addEventListener("jishi-native-reminders-unavailable", unavailable);
+    return () => window.removeEventListener("jishi-native-reminders-unavailable", unavailable);
+  }, []);
   const notificationHistory = useRef(readNotificationHistory());
   const [localBackgroundUrl, setLocalBackgroundUrl] = useState<string | null>(null);
   const backgroundObjectUrl = useRef<string | null>(null);
@@ -867,7 +878,7 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
   };
   const cropModal = cropTarget && <ImageCropper file={cropTarget.file} kind={cropTarget.kind} onCancel={() => setCropTarget(null)} onConfirm={uploadCropped} />;
 
-  if (section === "mine") return <><div className="profile-page"><header className="topbar"><div><span className="eyebrow">个人中心</span><h1>我的</h1></div></header><section className="profile-hero"><label className="avatar large" aria-label="更换头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="80px" unoptimized /> : <DefaultAvatar size={38} />}<input aria-label="选择头像图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /><span><ImagePlus size={15} /></span></label><div><h2>{data.user.name}</h2><p>{data.user.email}</p><span className="sync-badge"><Check size={14} />云端同步正常</span></div></section><section className="quick-grid"><button onClick={() => onSection("settings")}><span><Palette size={20} /></span><div><strong>外观与设置</strong><small>主题、卡片与提醒</small></div><ChevronRight size={18} /></button><button onClick={() => onSection("trash")}><span><ArchiveRestore size={20} /></span><div><strong>回收站</strong><small>{data.todos.filter((todo) => todo.status === "deleted").length} 个待办</small></div><ChevronRight size={18} /></button></section><section className="insight-card"><span className="eyebrow">本周小结</span><div><strong>{data.todos.filter((todo) => todo.status === "completed").length}</strong><p>件事情已经妥善完成。保持自己的节奏，就很好。</p></div></section><button className="button secondary signout" onClick={async () => { const saved = readDeviceLogin(); writeDeviceLogin({ ...saved, autoLogin: false }); await api("/api/auth/logout", { method: "POST" }); window.location.reload(); }}>退出当前账号</button></div>{cropModal}</>;
+  if (section === "mine") return <><div className="profile-page"><header className="topbar"><div><span className="eyebrow">个人中心</span><h1>我的</h1></div></header><section className="profile-hero"><label className="avatar large" aria-label="更换头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="80px" unoptimized /> : <DefaultAvatar size={38} />}<input aria-label="选择头像图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /><span><ImagePlus size={15} /></span></label><div><h2>{data.user.name}</h2><p>{data.user.email}</p><span className="sync-badge"><Check size={14} />云端同步正常</span></div></section><section className="quick-grid"><button onClick={() => onSection("settings")}><span><Palette size={20} /></span><div><strong>外观与设置</strong><small>主题、卡片与提醒</small></div><ChevronRight size={18} /></button><button onClick={() => onSection("trash")}><span><ArchiveRestore size={20} /></span><div><strong>回收站</strong><small>{data.todos.filter((todo) => todo.status === "deleted").length} 个待办</small></div><ChevronRight size={18} /></button></section><section className="insight-card"><span className="eyebrow">本周小结</span><div><strong>{data.todos.filter((todo) => todo.status === "completed").length}</strong><p>件事情已经妥善完成。保持自己的节奏，就很好。</p></div></section><button className="button secondary signout" onClick={async () => { const saved = readDeviceLogin(); await api("/api/auth/logout", { method: "POST" }); clearNativeReminders(); writeDeviceLogin({ ...saved, password: "", rememberPassword: false, autoLogin: false }); window.location.reload(); }}>退出当前账号</button></div>{cropModal}</>;
   return <><div className="settings-page"><header className="topbar"><div><span className="eyebrow">只属于你的记时</span><h1>设置</h1></div></header>
     <section className="settings-card"><div className="settings-title"><UserRound size={20} /><div><h2>个人资料</h2><p>默认头像会自动显示，也可以裁选图片并上传到服务器</p></div></div><div className="profile-settings-row"><label className="avatar settings-avatar" aria-label="上传自定义头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="52px" unoptimized /> : <DefaultAvatar size={27} />}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /></label><div className="inline-form"><input value={name} maxLength={24} onChange={(event) => setName(event.target.value)} /><button className="button primary" onClick={() => void onSaveProfile({ name })}>保存姓名</button></div></div></section>
     <section className="settings-card"><div className="settings-title"><CircleUserRound size={20} /><div><h2>当前设备登录</h2><p>账号与密码设置只保存在当前设备，不同步到服务器</p></div></div><div className="setting-line"><div><strong>保存账号</strong><small>{deviceLogin.rememberAccount ? deviceLogin.email || data.user.email : "未保存"}</small></div><button role="switch" aria-checked={deviceLogin.rememberAccount} className={`switch ${deviceLogin.rememberAccount ? "on" : ""}`} onClick={() => updateDeviceLogin(deviceLogin.rememberAccount ? { rememberAccount: false } : { rememberAccount: true, email: data.user.email })}><span /></button></div><div className="setting-line"><div><strong>保存密码</strong><small>{deviceLogin.rememberPassword ? "已保存，可在登录页修改" : "请在下次登录时勾选保存密码"}</small></div><span className="setting-status">{deviceLogin.rememberPassword ? "已保存" : "未保存"}</span></div><div className="setting-line"><div><strong>自动登录</strong><small>启动应用时使用当前设备保存的凭据登录</small></div><button role="switch" aria-checked={deviceLogin.autoLogin} disabled={!deviceLogin.rememberPassword} className={`switch ${deviceLogin.autoLogin ? "on" : ""}`} onClick={() => updateDeviceLogin({ autoLogin: !deviceLogin.autoLogin })}><span /></button></div>{deviceLogin.rememberPassword && <button className="button secondary clear-login" onClick={() => updateDeviceLogin({ rememberAccount: false })}>清除本机保存的登录信息</button>}</section>

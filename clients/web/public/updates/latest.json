@@ -1,11 +1,13 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-cd83fb4b97ab3ad9",
-  "webBuild": "cd83fb4b97ab3ad9efff9c6e76ee660736bb6e691cba97c0e4f7f54aee776dbc",
-  "publishedAt": "2026-09-09T00:33:37.421Z",
+  "releaseId": "web-e79ca056cdea7451",
+  "webBuild": "e79ca056cdea745171ada077bca032cd9b56e9a7778d80ae0842080efb2b62a1",
+  "publishedAt": "2026-09-09T01:27:52.679Z",
   "notes": [
-    "注册时增加确认密码，两次输入一致才能创建账号。",
-    "Windows 标题栏显示当前安装的客户端版本号。"
+    "注册时再次确认密码",
+    "电脑标题栏显示实际客户端版本",
+    "加强账号数据隔离与异常请求保护",
+    "鸿蒙通知支持后台定时提醒及退出清理"
   ],
   "clients": {
     "windows": {
