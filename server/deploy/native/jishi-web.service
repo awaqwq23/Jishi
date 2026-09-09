@@ -17,8 +17,16 @@ RestartSec=4
 MemoryMax=300M
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
+ProtectSystem=strict
 ProtectHome=true
+UMask=0077
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/opt/jishi/clients/web/.wrangler /var/www/jishi-downloads
 
 [Install]

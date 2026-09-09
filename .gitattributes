@@ -1,1 +1,2 @@
 *.sh text eol=lf
+/服务器设置.* export-ignore

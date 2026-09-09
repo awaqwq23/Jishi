@@ -1,0 +1,11 @@
+.git
+服务器设置.*
+**/.dev.vars*
+**/.env*
+**/*.p12
+**/*.pfx
+**/*.key
+**/*.pem
+work
+outputs
+.toolchains

@@ -10,7 +10,7 @@ test ! -L "$manifest_path"
 
 node - "$web_root" "$manifest_path" <<'NODE'
 const { createHash } = require("node:crypto");
-const { readdirSync, readFileSync, renameSync, statSync, writeFileSync } = require("node:fs");
+const { chmodSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } = require("node:fs");
 const { extname, join, relative } = require("node:path");
 
 const [webRoot, manifestPath] = process.argv.slice(2);
@@ -55,5 +55,7 @@ manifest.releaseId = `web-${webBuild.slice(0, 16)}`;
 manifest.publishedAt = new Date().toISOString();
 const temporary = `${manifestPath}.tmp`;
 writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 });
+// This public manifest must remain readable by Nginx under the service's 0077 umask.
+chmodSync(temporary, 0o644);
 renameSync(temporary, manifestPath);
 NODE

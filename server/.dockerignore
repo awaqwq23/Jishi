@@ -1,0 +1,10 @@
+.dev.vars*
+.env*
+!.env.selfhost.example
+.data
+.wrangler
+node_modules
+*.pem
+*.key
+*.p12
+*.pfx

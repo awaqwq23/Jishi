@@ -54,3 +54,15 @@ yarn-error.log*
 *.keystore
 .dev.vars
 .dev.vars.*
+
+# Local server access details; never commit or package these files.
+/服务器设置.md
+/服务器设置.*
+*.p12
+*.pfx
+*.key
+**/oh_modules/
+**/.hvigor/
+/clients/harmony/local.properties
+/clients/harmony/entry/build/
+/clients/harmony/build/

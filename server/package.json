@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev --local --port 8787 --persist-to .data",
     "check": "tsc --noEmit && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "test": "npm run check && node --test tests/security.test.mjs",
     "db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to .data",
     "deploy": "wrangler deploy"
   },

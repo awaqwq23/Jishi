@@ -1,14 +1,20 @@
+import { ApiError, allowedOrigins, checkRequestOrigin, limitAuth, readBytes, readJson, sameSecret, trustedGateway } from "./security";
+
 export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ALLOWED_ORIGINS?: string;
   AUTH_SECRET?: string;
+  AUTH_PROXY_SECRET?: string;
+  TRUST_PROXY_HEADERS?: string;
 }
 
 type User = { id: string; email: string; name: string };
 type Json = Record<string, unknown>;
 
 const schema = [
+  `CREATE TABLE IF NOT EXISTS auth_rate_limits (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_expiry ON auth_rate_limits(expires_at)`,
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, avatar_url TEXT, settings_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS auth_credentials (user_id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
@@ -30,9 +36,11 @@ let initialized: Promise<unknown> | null = null;
 
 function corsHeaders(request: Request, env: Env): HeadersInit {
   const origin = request.headers.get("origin") || "";
-  const allowed = (env.ALLOWED_ORIGINS || "http://localhost:3000").split(",").map((item) => item.trim());
+  const allowed = allowedOrigins(env);
   return {
-    "Access-Control-Allow-Origin": allowed.includes(origin) ? origin : allowed[0],
+    ...(allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, PUT, OPTIONS",
@@ -89,7 +97,7 @@ async function sessionUser(request: Request, env: Env): Promise<User | null> {
     const valid = await crypto.subtle.verify("HMAC", await authKey(env), base64UrlToBytes(signature), new TextEncoder().encode(payload));
     if (!valid) return null;
     const value = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload))) as User & { exp: number };
-    if (!value.id || !value.email || value.exp < Math.floor(Date.now() / 1000)) return null;
+    if (typeof value.id !== "string" || typeof value.email !== "string" || !Number.isFinite(value.exp) || value.exp <= Math.floor(Date.now() / 1000)) return null;
     return { id: value.id, email: value.email, name: value.name || value.email.split("@")[0] };
   } catch { return null; }
 }
@@ -106,6 +114,7 @@ function authResponse(request: Request, env: Env, value: unknown, cookie: string
 async function userFrom(request: Request, env: Env): Promise<User | null> {
   const session = await sessionUser(request, env);
   if (session) return session;
+  if (!await trustedGateway(request, env)) return null;
   const email = request.headers.get("oai-authenticated-user-email") || request.headers.get("x-auth-request-email");
   const id = request.headers.get("oai-authenticated-user-id") || email;
   const encodedName = request.headers.get("oai-authenticated-user-full-name");
@@ -118,13 +127,16 @@ async function userFrom(request: Request, env: Env): Promise<User | null> {
 
 async function register(request: Request, env: Env) {
   await ensureDb(env);
-  const body = await request.json<Json>();
+  const body = await readJson(request, 4096);
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
   const name = String(body.name || email.split("@")[0]).trim().slice(0, 24);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160) return response(request, env, { error: "请输入有效邮箱地址" }, 400);
   if (password.length < 8 || password.length > 128) return response(request, env, { error: "密码长度应为 8 至 128 位" }, 400);
   if (!name) return response(request, env, { error: "请输入昵称" }, 400);
+  await limitAuth(request, env, email, "register");
+  // Validate the signing configuration before committing an account.
+  await authKey(env);
   const exists = await env.DB.prepare("SELECT user_id FROM auth_credentials WHERE email=?").bind(email).first();
   if (exists) return response(request, env, { error: "该邮箱已经注册" }, 409);
   const id = crypto.randomUUID(); const now = new Date().toISOString(); const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -139,9 +151,11 @@ async function register(request: Request, env: Env) {
 
 async function login(request: Request, env: Env) {
   await ensureDb(env);
-  const body = await request.json<Json>(); const email = String(body.email || "").trim().toLowerCase(); const password = String(body.password || "");
+  const body = await readJson(request, 4096); const email = String(body.email || "").trim().toLowerCase(); const password = String(body.password || "");
+  await limitAuth(request, env, email.slice(0, 160), "login");
+  if (email.length > 160 || password.length > 128) throw new ApiError(401, "邮箱或密码不正确");
   const account = await env.DB.prepare("SELECT a.user_id,a.password_hash,a.password_salt,u.name FROM auth_credentials a JOIN users u ON u.id=a.user_id WHERE a.email=?").bind(email).first<{ user_id: string; password_hash: string; password_salt: string; name: string }>();
-  if (!account || (await passwordHash(password, Uint8Array.from(account.password_salt.match(/.{2}/g) || [], (part) => parseInt(part, 16)))) !== account.password_hash) return response(request, env, { error: "邮箱或密码不正确" }, 401);
+  if (!account || !await sameSecret(await passwordHash(password, Uint8Array.from(account.password_salt.match(/.{2}/g) || [], (part) => parseInt(part, 16))), account.password_hash)) return response(request, env, { error: "邮箱或密码不正确" }, 401);
   const user = { id: account.user_id, email, name: account.name }; const token = await createSession(env, user);
   return authResponse(request, env, { user }, sessionCookie(request, token));
 }
@@ -220,13 +234,19 @@ async function bootstrap(request: Request, env: Env, user: User) {
   });
 }
 
+async function validateTodoReferences(env: Env, user: User, categoryId: unknown, presetId: unknown) {
+  if (categoryId && !await env.DB.prepare("SELECT id FROM categories WHERE id=? AND user_id=?").bind(String(categoryId), user.id).first()) throw new ApiError(400, "分类不存在或不属于当前账号");
+  if (presetId && !await env.DB.prepare("SELECT id FROM reminder_presets WHERE id=? AND user_id=?").bind(String(presetId), user.id).first()) throw new ApiError(400, "提醒组不存在或不属于当前账号");
+}
+
 async function createTodo(request: Request, env: Env, user: User) {
   await prepareUser(env, user);
-  const body = await request.json<Json>();
+  const body = await readJson(request);
   const title = String(body.title || "").trim();
   if (!title || title.length > 60) return response(request, env, { error: "标题应为 1 至 60 个字" }, 400);
   const now = new Date().toISOString(); const id = crypto.randomUUID();
   const presetId = body.reminderPresetId ? String(body.reminderPresetId) : null;
+  await validateTodoReferences(env, user, body.categoryId, presetId);
   const preset = presetId ? await env.DB.prepare("SELECT offsets_json FROM reminder_presets WHERE id=? AND user_id=?").bind(presetId, user.id).first<{ offsets_json: string }>() : null;
   await env.DB.prepare("INSERT INTO todos (id,user_id,title,content,deadline,reminder_preset_id,reminder_offsets_json,category_id,priority,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,'active',?,?)").bind(id, user.id, title, String(body.content || ""), body.deadline || null, presetId, preset?.offsets_json || "[]", body.categoryId || null, body.priority || "normal", String(body.notes || ""), now, now).run();
   const row = await env.DB.prepare("SELECT * FROM todos WHERE id=?").bind(id).first<Json>();
@@ -234,7 +254,7 @@ async function createTodo(request: Request, env: Env, user: User) {
 }
 
 async function updateTodo(request: Request, env: Env, user: User, id: string) {
-  await prepareUser(env, user); const body = await request.json<Json>();
+  await prepareUser(env, user); const body = await readJson(request);
   const current = await env.DB.prepare("SELECT * FROM todos WHERE id=? AND user_id=?").bind(id, user.id).first<Json>();
   if (!current) return response(request, env, { error: "待办不存在" }, 404);
   const pick = (camel: string, snake: string) => body[camel] === undefined ? current[snake] : body[camel];
@@ -245,6 +265,8 @@ async function updateTodo(request: Request, env: Env, user: User, id: string) {
   if (status === "deleted" && current.status !== "deleted") deletedAt = now;
   if (status === "active") { completedAt = null; deletedAt = null; }
   const presetId = pick("reminderPresetId", "reminder_preset_id");
+  // Only validate supplied references; old dangling references remain editable.
+  await validateTodoReferences(env, user, body.categoryId, body.reminderPresetId);
   const preset = presetId ? await env.DB.prepare("SELECT offsets_json FROM reminder_presets WHERE id=? AND user_id=?").bind(presetId, user.id).first<{ offsets_json: string }>() : null;
   await env.DB.prepare("UPDATE todos SET title=?,content=?,deadline=?,reminder_preset_id=?,reminder_offsets_json=?,category_id=?,priority=?,notes=?,status=?,completed_at=?,deleted_at=?,updated_at=? WHERE id=? AND user_id=?").bind(title, pick("content", "content") || "", pick("deadline", "deadline") || null, presetId || null, preset?.offsets_json || "[]", pick("categoryId", "category_id") || null, pick("priority", "priority") || "normal", pick("notes", "notes") || "", status, completedAt, deletedAt, now, id, user.id).run();
   const row = await env.DB.prepare("SELECT * FROM todos WHERE id=?").bind(id).first<Json>();
@@ -253,12 +275,12 @@ async function updateTodo(request: Request, env: Env, user: User, id: string) {
 
 async function categories(request: Request, env: Env, user: User) {
   await prepareUser(env, user);
-  if (request.method === "POST") { const body = await request.json<Json>(); const name = String(body.name || "").trim(); if (!name || name.length > 12) return response(request, env, { error: "分类名称应为 1 至 12 个字" }, 400); const category = { id: crypto.randomUUID(), name, color: String(body.color || "#8d82a6"), isDefault: 0 }; await env.DB.prepare("INSERT INTO categories (id,user_id,name,color,is_default,created_at) VALUES (?,?,?,?,0,?)").bind(category.id, user.id, name, category.color, new Date().toISOString()).run(); return response(request, env, { category }, 201); }
+  if (request.method === "POST") { const body = await readJson(request); const name = String(body.name || "").trim(); if (!name || name.length > 12) return response(request, env, { error: "分类名称应为 1 至 12 个字" }, 400); const category = { id: crypto.randomUUID(), name, color: String(body.color || "#8d82a6"), isDefault: 0 }; await env.DB.prepare("INSERT INTO categories (id,user_id,name,color,is_default,created_at) VALUES (?,?,?,?,0,?)").bind(category.id, user.id, name, category.color, new Date().toISOString()).run(); return response(request, env, { category }, 201); }
   const id = new URL(request.url).searchParams.get("id"); if (!id) return response(request, env, { error: "缺少分类 ID" }, 400);
   const target = await env.DB.prepare("SELECT id,name,color,is_default FROM categories WHERE id=? AND user_id=?").bind(id, user.id).first<Json>();
   if (!target) return response(request, env, { error: "分类不存在" }, 404);
   if (request.method === "PATCH") {
-    const body = await request.json<Json>(); const name = String(body.name || target.name || "").trim(); const color = String(body.color || target.color || "#8d82a6");
+    const body = await readJson(request); const name = String(body.name || target.name || "").trim(); const color = String(body.color || target.color || "#8d82a6");
     if (!name || name.length > 12) return response(request, env, { error: "分类名称应为 1 至 12 个字" }, 400);
     if (!/^#[0-9a-f]{6}$/i.test(color)) return response(request, env, { error: "分类颜色格式不正确" }, 400);
     await env.DB.prepare("UPDATE categories SET name=?,color=? WHERE id=? AND user_id=?").bind(name, color, id, user.id).run();
@@ -277,7 +299,7 @@ async function categories(request: Request, env: Env, user: User) {
 async function presets(request: Request, env: Env, user: User) {
   await prepareUser(env, user);
   if (request.method === "POST") {
-    const body = await request.json<Json>(); const name = String(body.name || "").trim(); const offsets = Array.isArray(body.offsets) ? [...new Set(body.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0))].slice(0, 8) : [];
+    const body = await readJson(request); const name = String(body.name || "").trim(); const offsets = Array.isArray(body.offsets) ? [...new Set(body.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0))].slice(0, 8) : [];
     if (!name || name.length > 20 || !offsets.length) return response(request, env, { error: "请填写 1 至 20 个字的名称和有效提醒时间" }, 400); const preset = { id: crypto.randomUUID(), name, offsets, isDefault: 0 };
     await env.DB.prepare("INSERT INTO reminder_presets (id,user_id,name,offsets_json,is_default,created_at) VALUES (?,?,?,?,0,?)").bind(preset.id, user.id, name, JSON.stringify(offsets), new Date().toISOString()).run(); return response(request, env, { preset }, 201);
   }
@@ -285,7 +307,7 @@ async function presets(request: Request, env: Env, user: User) {
   const target = await env.DB.prepare("SELECT id,name,offsets_json,is_default FROM reminder_presets WHERE id=? AND user_id=?").bind(id, user.id).first<Json>();
   if (!target) return response(request, env, { error: "提醒组不存在" }, 404);
   if (request.method === "PATCH") {
-    const body = await request.json<Json>(); const name = String(body.name || target.name || "").trim(); const offsets = Array.isArray(body.offsets) ? [...new Set(body.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0))].slice(0, 8) : JSON.parse(String(target.offsets_json || "[]"));
+    const body = await readJson(request); const name = String(body.name || target.name || "").trim(); const offsets = Array.isArray(body.offsets) ? [...new Set(body.offsets.map(Number).filter((value) => Number.isFinite(value) && value > 0))].slice(0, 8) : JSON.parse(String(target.offsets_json || "[]"));
     if (!name || name.length > 20 || !offsets.length) return response(request, env, { error: "请填写 1 至 20 个字的名称和有效提醒时间" }, 400);
     const serialized = JSON.stringify(offsets);
     await env.DB.batch([
@@ -308,7 +330,7 @@ async function schedules(request: Request, env: Env, user: User, id?: string) {
   await prepareUser(env, user);
   const now = new Date().toISOString();
   if (request.method === "POST" && !id) {
-    const body = await request.json<Json>();
+    const body = await readJson(request);
     const kind = body.kind === "habit" ? "habit" : "routine";
     const title = String(body.title || "").trim();
     const recurrence = String(body.recurrence || "daily");
@@ -336,7 +358,7 @@ async function schedules(request: Request, env: Env, user: User, id?: string) {
     ]);
     return response(request, env, { ok: true });
   }
-  const body = await request.json<Json>();
+  const body = await readJson(request);
   const title = String(body.title === undefined ? current.title : body.title).trim();
   const recurrence = String(body.recurrence === undefined ? current.recurrence : body.recurrence);
   const startDate = String(body.startDate === undefined ? current.start_date : body.startDate);
@@ -356,7 +378,7 @@ async function schedules(request: Request, env: Env, user: User, id?: string) {
 
 async function scheduleCompletion(request: Request, env: Env, user: User, id: string) {
   await prepareUser(env, user);
-  const body = await request.json<Json>(); const occurrenceDate = String(body.occurrenceDate || ""); const completed = body.completed !== false;
+  const body = await readJson(request); const occurrenceDate = String(body.occurrenceDate || ""); const completed = body.completed !== false;
   if (!validDate(occurrenceDate)) return response(request, env, { error: "完成日期无效" }, 400);
   const item = await env.DB.prepare("SELECT id FROM schedule_items WHERE id=? AND user_id=? AND status='active'").bind(id, user.id).first();
   if (!item) return response(request, env, { error: "计划不存在或已在回收站" }, 404);
@@ -374,7 +396,7 @@ async function scheduleCompletion(request: Request, env: Env, user: User, id: st
 async function diary(request: Request, env: Env, user: User, entryDate: string) {
   await prepareUser(env, user);
   if (!validDate(entryDate)) return response(request, env, { error: "日记日期无效" }, 400);
-  const body = await request.json<Json>(); const content = String(body.content ?? "");
+  const body = await readJson(request); const content = String(body.content ?? "");
   if (content.length > 100_000) return response(request, env, { error: "单篇日记不能超过 100000 个字" }, 413);
   const now = new Date().toISOString(); const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO diary_entries (id,user_id,entry_date,content,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id,entry_date) DO UPDATE SET content=excluded.content,updated_at=excluded.updated_at")
@@ -393,7 +415,7 @@ async function snapshot(env: Env, user: User, section: string) {
     return { name: profile?.name, settings: JSON.parse(String(profile?.settings_json || "{}")), categories: categories.results, reminderPresets: presets.results.map((item) => ({ name: item.name, offsets: JSON.parse(String(item.offsets_json || "[]")), isDefault: item.isDefault })) };
   }
   if (section === "todos") {
-    const rows = await env.DB.prepare("SELECT t.*,c.name category_name,p.name preset_name FROM todos t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN reminder_presets p ON p.id=t.reminder_preset_id WHERE t.user_id=? ORDER BY t.created_at").bind(user.id).all<Json>();
+    const rows = await env.DB.prepare("SELECT t.*,c.name category_name,p.name preset_name FROM todos t LEFT JOIN categories c ON c.id=t.category_id AND c.user_id=t.user_id LEFT JOIN reminder_presets p ON p.id=t.reminder_preset_id AND p.user_id=t.user_id WHERE t.user_id=? ORDER BY t.created_at").bind(user.id).all<Json>();
     return { items: rows.results.map((row) => ({ ...todo(row), categoryName: row.category_name, presetName: row.preset_name })) };
   }
   if (section === "schedules" || section === "routines" || section === "habits") {
@@ -433,13 +455,15 @@ async function exportData(request: Request, env: Env, user: User) {
 }
 
 async function runBatch(env: Env, statements: D1PreparedStatement[]) {
-  for (let index = 0; index < statements.length; index += 75) await env.DB.batch(statements.slice(index, index + 75));
+  // Replacing a partition must be atomic: a failed insert cannot leave the
+  // preceding DELETE committed while the user's old records are already gone.
+  if (statements.length) await env.DB.batch(statements);
 }
 
 async function importData(request: Request, env: Env, user: User) {
   await prepareUser(env, user);
   const contentLength = Number(request.headers.get("content-length") || 0); if (Number.isFinite(contentLength) && contentLength > 10 * 1024 * 1024) return response(request, env, { error: "导入文件不能超过 10MB" }, 413);
-  const section = new URL(request.url).searchParams.get("section") || ""; const envelope = await request.json<Json>();
+  const section = new URL(request.url).searchParams.get("section") || ""; const envelope = await readJson(request, 10 * 1024 * 1024);
   if (Number(envelope.schemaVersion) !== 1 || envelope.section !== section || !envelope.data || typeof envelope.data !== "object") return response(request, env, { error: "导入文件格式或分区不匹配" }, 400);
   const data = envelope.data as Json; const now = new Date().toISOString(); const statements: D1PreparedStatement[] = [];
   if (section === "config") {
@@ -471,7 +495,7 @@ async function importData(request: Request, env: Env, user: User) {
 }
 
 async function profile(request: Request, env: Env, user: User) {
-  await prepareUser(env, user); const body = await request.json<Json>(); const current = await env.DB.prepare("SELECT name,settings_json,avatar_url FROM users WHERE id=?").bind(user.id).first<Json>();
+  await prepareUser(env, user); const body = await readJson(request); const current = await env.DB.prepare("SELECT name,settings_json,avatar_url FROM users WHERE id=?").bind(user.id).first<Json>();
   const name = String(body.name || current?.name || user.name).trim().slice(0, 24); const settings = normalizedSettings(body.settings ?? JSON.parse(String(current?.settings_json || "{}"))); const avatarUrl = body.avatarUrl === undefined ? current?.avatar_url : body.avatarUrl;
   await env.DB.prepare("UPDATE users SET name=?,settings_json=?,avatar_url=?,updated_at=? WHERE id=?").bind(name, JSON.stringify(settings), avatarUrl || null, new Date().toISOString(), user.id).run(); return response(request, env, { user: { id: user.id, email: user.email, name, settings, avatarUrl } });
 }
@@ -483,13 +507,13 @@ async function media(request: Request, env: Env, user: User) {
     const type = (request.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
     const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
     if (!allowedTypes.has(type)) return response(request, env, { error: "只支持 JPEG、PNG、WebP 或 GIF 图片" }, 400);
-    const bytes = await request.arrayBuffer();
+    const bytes = await readBytes(request, 5 * 1024 * 1024);
     if (!bytes.byteLength) return response(request, env, { error: "图片内容为空" }, 400);
     if (bytes.byteLength > 5 * 1024 * 1024) return response(request, env, { error: "图片不能超过 5MB" }, 413);
     await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: type } });
     return response(request, env, { url: `/api/media?kind=${kind}&v=${Date.now()}` });
   }
-  const object = await env.MEDIA.get(key); if (!object) return new Response(null, { status: 404, headers: corsHeaders(request, env) }); return new Response(object.body, { headers: { ...corsHeaders(request, env), "Content-Type": object.httpMetadata?.contentType || "image/jpeg", "Cache-Control": "private,max-age=3600" } });
+  const object = await env.MEDIA.get(key); if (!object) return response(request, env, { error: "Media not found" }, 404); return new Response(object.body, { headers: { ...corsHeaders(request, env), "Content-Type": object.httpMetadata?.contentType || "image/jpeg", "Cache-Control": "private, no-store", "Vary": "Origin, Cookie" } });
 }
 
 export default {
@@ -497,25 +521,35 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, env) });
     const url = new URL(request.url); if (url.pathname === "/health") return response(request, env, { status: "ok", service: "jishi-api" });
     try {
-      if (url.pathname === "/api/auth/register" && request.method === "POST") return register(request, env);
-      if (url.pathname === "/api/auth/login" && request.method === "POST") return login(request, env);
+      checkRequestOrigin(request, env);
+      if (url.pathname === "/api/auth/register" && request.method === "POST") return await register(request, env);
+      if (url.pathname === "/api/auth/login" && request.method === "POST") return await login(request, env);
       if (url.pathname === "/api/auth/logout" && request.method === "POST") return authResponse(request, env, { ok: true }, sessionCookie(request, "", 0));
       const user = await userFrom(request, env); if (!user) return response(request, env, { error: "请先登录后再继续" }, 401);
-      if (url.pathname === "/api/bootstrap" && request.method === "GET") return bootstrap(request, env, user);
-      if (url.pathname === "/api/todos" && request.method === "POST") return createTodo(request, env, user);
-      const todoMatch = url.pathname.match(/^\/api\/todos\/([^/]+)$/); if (todoMatch && request.method === "PATCH") return updateTodo(request, env, user, todoMatch[1]);
+      if (url.pathname === "/api/bootstrap" && request.method === "GET") return await bootstrap(request, env, user);
+      if (url.pathname === "/api/todos" && request.method === "POST") return await createTodo(request, env, user);
+      const todoMatch = url.pathname.match(/^\/api\/todos\/([^/]+)$/); if (todoMatch && request.method === "PATCH") return await updateTodo(request, env, user, todoMatch[1]);
       if (todoMatch && request.method === "DELETE") { await prepareUser(env, user); await env.DB.prepare("DELETE FROM todos WHERE id=? AND user_id=? AND status='deleted'").bind(todoMatch[1], user.id).run(); return response(request, env, { ok: true }); }
-      if (url.pathname === "/api/categories" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return categories(request, env, user);
-      if (url.pathname === "/api/presets" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return presets(request, env, user);
-      if (url.pathname === "/api/schedules" && request.method === "POST") return schedules(request, env, user);
-      const scheduleMatch = url.pathname.match(/^\/api\/schedules\/([^/]+)$/); if (scheduleMatch && (request.method === "PATCH" || request.method === "DELETE")) return schedules(request, env, user, scheduleMatch[1]);
-      const completionMatch = url.pathname.match(/^\/api\/schedules\/([^/]+)\/completion$/); if (completionMatch && request.method === "PUT") return scheduleCompletion(request, env, user, completionMatch[1]);
-      const diaryMatch = url.pathname.match(/^\/api\/diary\/(\d{4}-\d{2}-\d{2})$/); if (diaryMatch && request.method === "PUT") return diary(request, env, user, diaryMatch[1]);
-      if (url.pathname === "/api/data/export" && request.method === "GET") return exportData(request, env, user);
-      if (url.pathname === "/api/data/import" && request.method === "POST") return importData(request, env, user);
-      if (url.pathname === "/api/profile" && request.method === "PATCH") return profile(request, env, user);
-      if (url.pathname === "/api/media" && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) return media(request, env, user);
+      if (url.pathname === "/api/categories" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return await categories(request, env, user);
+      if (url.pathname === "/api/presets" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return await presets(request, env, user);
+      if (url.pathname === "/api/schedules" && request.method === "POST") return await schedules(request, env, user);
+      const scheduleMatch = url.pathname.match(/^\/api\/schedules\/([^/]+)$/); if (scheduleMatch && (request.method === "PATCH" || request.method === "DELETE")) return await schedules(request, env, user, scheduleMatch[1]);
+      const completionMatch = url.pathname.match(/^\/api\/schedules\/([^/]+)\/completion$/); if (completionMatch && request.method === "PUT") return await scheduleCompletion(request, env, user, completionMatch[1]);
+      const diaryMatch = url.pathname.match(/^\/api\/diary\/(\d{4}-\d{2}-\d{2})$/); if (diaryMatch && request.method === "PUT") return await diary(request, env, user, diaryMatch[1]);
+      if (url.pathname === "/api/data/export" && request.method === "GET") return await exportData(request, env, user);
+      if (url.pathname === "/api/data/import" && request.method === "POST") return await importData(request, env, user);
+      if (url.pathname === "/api/profile" && request.method === "PATCH") return await profile(request, env, user);
+      if (url.pathname === "/api/media" && (request.method === "GET" || request.method === "PUT" || request.method === "DELETE")) return await media(request, env, user);
       return response(request, env, { error: "接口不存在" }, 404);
-    } catch (error) { return response(request, env, { error: error instanceof Error ? error.message : "服务器暂时不可用" }, 500); }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const result = response(request, env, { error: error.message }, error.status);
+        if (error.status === 429) result.headers.set("Retry-After", String(error.retryAfter || 900));
+        return result;
+      }
+      const requestId = crypto.randomUUID();
+      console.error("API request failed", { requestId, path: url.pathname, type: error instanceof Error ? error.name : "unknown" });
+      return response(request, env, { error: "服务器暂时不可用，请稍后重试", requestId }, 500);
+    }
   },
 } satisfies ExportedHandler<Env>;
