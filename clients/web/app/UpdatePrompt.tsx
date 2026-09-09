@@ -69,6 +69,16 @@ function storageKey(identity: ClientIdentity, suffix: string) {
 export default function UpdatePrompt() {
   const [prompt, setPrompt] = useState<PromptState | null>(null);
 
+  useEffect(() => {
+    // Electron uses the page title for its native window title bar. Read the
+    // installed version, never the newest version in the update manifest.
+    const version = navigator.userAgent.match(/JishiWindows\/([0-9]+(?:\.[0-9]+){1,3})/i)?.[1];
+    if (!version) return;
+    const previousTitle = document.title;
+    document.title = `记时 v${version}`;
+    return () => { document.title = previousTitle; };
+  }, []);
+
   const checkForUpdates = useCallback(async () => {
     const identity = detectClient();
     if (!identity) return;

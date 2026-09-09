@@ -14,5 +14,9 @@
     "release:manifest": "node scripts/generate-update-manifest.mjs",
     "check:updates": "node scripts/test-update-contract.mjs",
     "check": "npm run check --workspace @jishi/server && npm run lint --workspace @jishi/web && npm test --workspace @jishi/web && npm test --workspace @jishi/windows && npm run check:updates"
+  },
+  "overrides": {
+    "sharp": "0.35.4",
+    "js-yaml": "4.3.2"
   }
 }

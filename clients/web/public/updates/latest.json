@@ -1,13 +1,11 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-90bad94722c4d757",
-  "webBuild": "90bad94722c4d757163a7453f01f85d42eeeaa700970c1b73214fd23ab628173",
-  "publishedAt": "2026-09-08T01:46:12.567Z",
+  "releaseId": "web-cd83fb4b97ab3ad9",
+  "webBuild": "cd83fb4b97ab3ad9efff9c6e76ee660736bb6e691cba97c0e4f7f54aee776dbc",
+  "publishedAt": "2026-09-09T00:33:37.421Z",
   "notes": [
-    "合并定期任务与习惯，统一为定期任务",
-    "修复网页、Windows 与 Android 的弹窗和系统通知",
-    "Windows 0.4.5 支持托盘后台提醒，Android 0.4.6 支持重启后恢复定时提醒",
-    "完善 HarmonyOS 主站切换、错误页与通知权限桥接"
+    "注册时增加确认密码，两次输入一致才能创建账号。",
+    "Windows 标题栏显示当前安装的客户端版本号。"
   ],
   "clients": {
     "windows": {

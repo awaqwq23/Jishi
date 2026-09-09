@@ -516,6 +516,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState(initialLogin.rememberAccount ? initialLogin.email : "");
   const [password, setPassword] = useState(initialLogin.rememberPassword ? initialLogin.password : "");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [rememberAccount, setRememberAccount] = useState(initialLogin.rememberAccount);
   const [rememberPassword, setRememberPassword] = useState(initialLogin.rememberPassword);
   const [autoLogin, setAutoLogin] = useState(initialLogin.autoLogin);
@@ -523,6 +524,10 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
   const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
   const autoAttempted = useRef(false);
   const login = useCallback(async (automatic = false) => {
+    if (mode === "register" && password !== confirmPassword) {
+      setMessage("两次输入的密码不一致，请重新输入");
+      return;
+    }
     setBusy(true); setMessage("");
     try {
       await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify({ email, password, name }) });
@@ -536,14 +541,14 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
       await onAuthenticated();
     } catch (err) { setMessage(`${automatic ? "自动登录失败：" : ""}${err instanceof Error ? err.message : "登录失败，请稍后重试"}`); }
     finally { setBusy(false); }
-  }, [autoLogin, email, mode, name, onAuthenticated, password, rememberAccount, rememberPassword]);
+  }, [autoLogin, confirmPassword, email, mode, name, onAuthenticated, password, rememberAccount, rememberPassword]);
   useEffect(() => {
     if (!autoAttempted.current && initialLogin.autoLogin && initialLogin.email && initialLogin.password) {
       autoAttempted.current = true; void login(true);
     }
   }, [initialLogin, login]);
   const submit = (event: React.FormEvent) => { event.preventDefault(); void login(false); };
-  return <main className="signin-screen"><div className="brand-mark">记</div><span className="eyebrow">欢迎来到记时</span><h1>把今天，安放得刚刚好。</h1><p>使用邮箱创建自己的空间，待办、提醒与个人设置会在各端保持一致。</p><form className="auth-form" onSubmit={submit}>{mode === "register" && <label><span>昵称</span><input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" maxLength={24} required placeholder="怎么称呼你" /></label>}<label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required placeholder="name@example.com" /></label><label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required placeholder="至少 8 位" /></label>{mode === "login" && <div className="login-options"><label><input type="checkbox" checked={rememberAccount} onChange={(event) => { setRememberAccount(event.target.checked); if (!event.target.checked) { setRememberPassword(false); setAutoLogin(false); } }} /><span>保存账号</span></label><label><input type="checkbox" checked={rememberPassword} onChange={(event) => { setRememberPassword(event.target.checked); if (event.target.checked) setRememberAccount(true); else setAutoLogin(false); }} /><span>保存密码</span></label><label><input type="checkbox" checked={autoLogin} onChange={(event) => { setAutoLogin(event.target.checked); if (event.target.checked) { setRememberAccount(true); setRememberPassword(true); } }} /><span>自动登录</span></label><small>密码只保存在当前设备；公共电脑请勿开启。</small></div>}{message && <div className="auth-error">{message}</div>}<button className="button primary" disabled={busy}>{busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}</button></form><button className="auth-switch" onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setMessage(""); }}>{mode === "login" ? "还没有账号？创建一个" : "已有账号？直接登录"}</button></main>;
+  return <main className="signin-screen"><div className="brand-mark">记</div><span className="eyebrow">欢迎来到记时</span><h1>把今天，安放得刚刚好。</h1><p>使用邮箱创建自己的空间，待办、提醒与个人设置会在各端保持一致。</p><form className="auth-form" onSubmit={submit}>{mode === "register" && <label><span>昵称</span><input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" maxLength={24} required placeholder="怎么称呼你" /></label>}<label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required placeholder="name@example.com" /></label><label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required placeholder="至少 8 位" /></label>{mode === "register" && <label><span>确认密码</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required placeholder="请再次输入密码" /></label>}{mode === "login" && <div className="login-options"><label><input type="checkbox" checked={rememberAccount} onChange={(event) => { setRememberAccount(event.target.checked); if (!event.target.checked) { setRememberPassword(false); setAutoLogin(false); } }} /><span>保存账号</span></label><label><input type="checkbox" checked={rememberPassword} onChange={(event) => { setRememberPassword(event.target.checked); if (event.target.checked) setRememberAccount(true); else setAutoLogin(false); }} /><span>保存密码</span></label><label><input type="checkbox" checked={autoLogin} onChange={(event) => { setAutoLogin(event.target.checked); if (event.target.checked) { setRememberAccount(true); setRememberPassword(true); } }} /><span>自动登录</span></label><small>密码只保存在当前设备；公共电脑请勿开启。</small></div>}{message && <div className="auth-error" role="alert">{message}</div>}<button className="button primary" disabled={busy}>{busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}</button></form><button className="auth-switch" disabled={busy} onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setConfirmPassword(""); setMessage(""); }}>{mode === "login" ? "还没有账号？创建一个" : "已有账号？直接登录"}</button></main>;
 }
 
 export default function TodoApp() {
