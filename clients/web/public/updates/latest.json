@@ -1,13 +1,12 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-e79ca056cdea7451",
-  "webBuild": "e79ca056cdea745171ada077bca032cd9b56e9a7778d80ae0842080efb2b62a1",
-  "publishedAt": "2026-09-09T01:27:52.679Z",
+  "releaseId": "web-4ac12598051f51c5",
+  "webBuild": "4ac12598051f51c583c07212a3cf37328e214eba34a1e0c4cfe67585246f7594",
+  "publishedAt": "2026-09-14T02:01:59.635Z",
   "notes": [
-    "注册时再次确认密码",
-    "电脑标题栏显示实际客户端版本",
-    "加强账号数据隔离与异常请求保护",
-    "鸿蒙通知支持后台定时提醒及退出清理"
+    "修复客户端点击更新后未发起安装包下载",
+    "下载自动使用当前可访问站点，兼容 /note 和独立域名",
+    "服务器明确按附件提供 Windows 与 Android 安装包"
   ],
   "clients": {
     "windows": {

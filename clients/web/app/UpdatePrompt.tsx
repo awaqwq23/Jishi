@@ -66,6 +66,13 @@ function storageKey(identity: ClientIdentity, suffix: string) {
   return `jishi:update:${identity.platform}:${suffix}`;
 }
 
+function currentHostDownloadUrl(advertisedUrl: string) {
+  const advertised = new URL(advertisedUrl, window.location.href);
+  const filename = advertised.pathname.split("/").at(-1) || "";
+  if (!/^Jishi-(?:Windows-Setup|Android)-[0-9]+(?:\.[0-9]+){2}\.(?:exe|apk)$/.test(filename)) return advertised.toString();
+  return new URL(withRuntimeBase(`/downloads/${filename}`), window.location.origin).toString();
+}
+
 export default function UpdatePrompt() {
   const [prompt, setPrompt] = useState<PromptState | null>(null);
 
@@ -145,10 +152,10 @@ export default function UpdatePrompt() {
       localStorage.setItem(storageKey(prompt.identity, "snooze"), JSON.stringify({ releaseId: prompt.manifest.releaseId, until: Date.now() + SNOOZE_TIME }));
     }
     setPrompt(null);
-    window.location.assign(new URL(prompt.release.downloadUrl, window.location.origin).toString());
   };
 
   const platformName = prompt.identity.platform === "windows" ? "Windows" : prompt.identity.platform === "android" ? "Android" : "应用";
+  const downloadHref = prompt.release ? currentHostDownloadUrl(prompt.release.downloadUrl) : undefined;
   return <div className="update-layer" role="presentation">
     <section className="update-card" role="dialog" aria-modal="true" aria-labelledby="update-title">
       {!prompt.release?.required && <button className="update-close" onClick={later} aria-label="稍后更新"><X size={19} /></button>}
@@ -161,9 +168,9 @@ export default function UpdatePrompt() {
       <div className="update-trust"><ShieldCheck size={16} /><span>安装包由记时服务器通过 HTTPS 提供</span></div>
       <div className="update-actions">
         {!prompt.release?.required && <button className="button secondary" onClick={later}>稍后提醒</button>}
-        <button className="button primary" onClick={() => prompt.kind === "binary" ? download() : void refresh()}>
-          {prompt.kind === "binary" ? <><Download size={17} />下载更新</> : <><RefreshCw size={17} />立即刷新</>}
-        </button>
+        {prompt.kind === "binary" && downloadHref
+          ? <a className="button primary" href={downloadHref} download onClick={download}><Download size={17} />下载更新</a>
+          : <button className="button primary" onClick={() => void refresh()}><RefreshCw size={17} />立即刷新</button>}
       </div>
     </section>
   </div>;

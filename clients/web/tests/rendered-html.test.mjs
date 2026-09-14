@@ -53,6 +53,19 @@ test("includes product metadata and installable shell", async () => {
   await access(new URL("public/sw.js", templateRoot));
 });
 
+test("uses same-origin attachment downloads for client updates", async () => {
+  const [updatePrompt, nginxRoot, nginxSubdomain] = await Promise.all([
+    readFile(new URL("../app/UpdatePrompt.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../../server/deploy/native/nginx-jishi.conf", import.meta.url), "utf8"),
+    readFile(new URL("../../../server/deploy/native/nginx-jishi-subdomain.conf", import.meta.url), "utf8"),
+  ]);
+  assert.match(updatePrompt, /withRuntimeBase\(`\/downloads\/\$\{filename\}`\)/);
+  assert.match(updatePrompt, /<a className="button primary" href=\{downloadHref\} download onClick=\{download\}>/);
+  assert.doesNotMatch(updatePrompt, /window\.location\.assign/);
+  assert.match(nginxRoot, /location \/downloads\/[\s\S]*Content-Disposition "attachment" always/);
+  assert.match(nginxSubdomain, /location \/downloads\/[\s\S]*Content-Disposition "attachment" always/);
+});
+
 test("keeps the reported interaction regressions covered", async () => {
   const [app, css, server, migration, androidConfig, offlinePage, androidActivity, androidManifest, androidScheduler, androidBootReceiver, windowsMain, windowsPreload, harmonyPage, harmonyApp] = await Promise.all([
     readFile(new URL("../app/TodoApp.tsx", import.meta.url), "utf8"),
