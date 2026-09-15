@@ -53,14 +53,23 @@ test("includes product metadata and installable shell", async () => {
   await access(new URL("public/sw.js", templateRoot));
 });
 
-test("uses same-origin attachment downloads for client updates", async () => {
-  const [updatePrompt, nginxRoot, nginxSubdomain] = await Promise.all([
+test("uses same-origin resumable downloads with visible progress", async () => {
+  const [updatePrompt, windowsDownloader, androidDownloader, nginxRoot, nginxSubdomain] = await Promise.all([
     readFile(new URL("../app/UpdatePrompt.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../windows/update-downloader.cjs", import.meta.url), "utf8"),
+    readFile(new URL("../../android/android/app/src/main/java/cn/jishi/todo/UpdateDownloadController.java", import.meta.url), "utf8"),
     readFile(new URL("../../../server/deploy/native/nginx-jishi.conf", import.meta.url), "utf8"),
     readFile(new URL("../../../server/deploy/native/nginx-jishi-subdomain.conf", import.meta.url), "utf8"),
   ]);
   assert.match(updatePrompt, /withRuntimeBase\(`\/downloads\/\$\{filename\}`\)/);
-  assert.match(updatePrompt, /<a className="button primary" href=\{downloadHref\} download onClick=\{download\}>/);
+  assert.match(updatePrompt, /downloadUpdate\(JSON\.stringify/);
+  assert.match(updatePrompt, /update-progress/);
+  assert.match(updatePrompt, /bytesPerSecond/);
+  assert.match(windowsDownloader, /const PART_COUNT = 8/);
+  assert.match(windowsDownloader, /pending-update\.json/);
+  assert.match(windowsDownloader, /安装包校验失败/);
+  assert.match(androidDownloader, /DownloadManager\.Query/);
+  assert.match(androidDownloader, /jishi-update-download/);
   assert.doesNotMatch(updatePrompt, /window\.location\.assign/);
   assert.match(nginxRoot, /location \/downloads\/[\s\S]*Content-Disposition "attachment" always/);
   assert.match(nginxSubdomain, /location \/downloads\/[\s\S]*Content-Disposition "attachment" always/);
@@ -129,7 +138,8 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(app, /document\.addEventListener\("visibilitychange"/);
   assert.match(app, /jishi-native-notification-permission/);
   assert.match(app, /className="reminder-popup"/);
-  assert.match(app, /upcomingNativeReminders\(data\)/);
+  assert.match(app, /upcomingNativeReminders\(data, Date\.now\(\), horizonDays\)/);
+  assert.match(app, /JishiAndroid.*\? 366 : 21/);
   assert.match(app, /native\.syncReminders/);
   assert.match(app, /if \(deadline <= now\)/);
   assert.match(app, /function DiaryBoard/);
@@ -167,14 +177,18 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(androidActivity, /CookieManager\.getInstance\(\)\.getCookie\(url\)/);
   assert.match(androidManifest, /android\.permission\.POST_NOTIFICATIONS/);
   assert.match(androidManifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
+  assert.match(androidManifest, /android\.permission\.SCHEDULE_EXACT_ALARM/);
   assert.match(androidScheduler, /setExactAndAllowWhileIdle/);
   assert.match(androidScheduler, /NotificationManagerCompat/);
   assert.match(androidScheduler, /jishi-native-reminders/);
   assert.match(androidBootReceiver, /ACTION_BOOT_COMPLETED/);
+  assert.match(androidBootReceiver, /ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED/);
   assert.match(windowsMain, /new Tray\(icon\)/);
   assert.match(windowsMain, /jishi:sync-reminders/);
+  assert.match(windowsMain, /jishi:update-download-start/);
   assert.match(windowsMain, /isTrustedSender/);
   assert.match(windowsPreload, /exposeInMainWorld\("JishiNative"/);
+  assert.match(windowsPreload, /onUpdateDownload/);
   assert.match(harmonyPage, /https:\/\/jishi\.awaqwq233\.com\//);
   assert.match(harmonyPage, /javaScriptProxy/);
   assert.match(harmonyPage, /onLoadIntercept/);

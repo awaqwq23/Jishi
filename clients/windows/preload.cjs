@@ -13,4 +13,16 @@ contextBridge.exposeInMainWorld("JishiNative", {
   syncReminders(payload) {
     ipcRenderer.send("jishi:sync-reminders", String(payload));
   },
+  downloadUpdate(payload) {
+    return ipcRenderer.invoke("jishi:update-download-start", String(payload));
+  },
+  updateDownloadState() {
+    return ipcRenderer.invoke("jishi:update-download-state");
+  },
+  onUpdateDownload(listener) {
+    if (typeof listener !== "function") return () => {};
+    const receive = (_event, state) => listener(state);
+    ipcRenderer.on("jishi:update-download", receive);
+    return () => ipcRenderer.removeListener("jishi:update-download", receive);
+  },
 });

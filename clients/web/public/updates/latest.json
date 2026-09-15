@@ -1,26 +1,27 @@
 {
   "schemaVersion": 1,
-  "releaseId": "web-4ac12598051f51c5",
-  "webBuild": "4ac12598051f51c583c07212a3cf37328e214eba34a1e0c4cfe67585246f7594",
-  "publishedAt": "2026-09-14T02:01:59.635Z",
+  "releaseId": "web-3e3b2175ceeeafbf",
+  "webBuild": "3e3b2175ceeeafbf4bc89f4990a1d1420c50e957bf0fb8a58f8f2b93bd024813",
+  "publishedAt": "2026-09-15T03:40:35.124Z",
   "notes": [
-    "修复客户端点击更新后未发起安装包下载",
-    "下载自动使用当前可访问站点，兼容 /note 和独立域名",
-    "服务器明确按附件提供 Windows 与 Android 安装包"
+    "更新下载显示百分比、实时速度和剩余时间",
+    "Windows 使用八路分段下载并在重启后断点续传",
+    "Android 关闭应用后继续下载并在通知栏显示状态",
+    "按设备申请通知权限，Android 额外申请精确定时权限"
   ],
   "clients": {
     "windows": {
-      "version": "0.4.5",
-      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.5.exe",
-      "sha256": "AD05ED72741D4E1D771DA6BFAF8C5FFDCF8D79A804DB8BF3511C30D99F826EE7",
-      "size": 99627529,
+      "version": "0.4.6",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.6.exe",
+      "sha256": "4079BCA14B51A731D7BBC230DFEAAAAA6FFC7ED184403F10880167A8A5C92244",
+      "size": 99630936,
       "required": false
     },
     "android": {
-      "version": "0.4.6",
-      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.6.apk",
-      "sha256": "7FDCB9ACFBC4DD22E62969A332A57987DA69F4464B7259C22E656E1EB7A9C945",
-      "size": 4155446,
+      "version": "0.4.7",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.7.apk",
+      "sha256": "2C238D4F4D346F613D77E008A626EF46A98F5F70FEC6F3E84F089FFF2C0FA8E2",
+      "size": 4069317,
       "required": false
     }
   }

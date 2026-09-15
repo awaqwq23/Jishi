@@ -66,7 +66,7 @@ final class NotificationScheduler {
             JSONObject reminder = reminders.optJSONObject(index);
             if (reminder == null) continue;
             String key = reminder.optString("key", ""); long at = reminder.optLong("at", 0);
-            if (key.isEmpty() || at <= now || at - now > 21L * 86400000L) continue;
+            if (key.isEmpty() || at <= now || at - now > 366L * 86400000L) continue;
             PendingIntent intent = pendingIntent(context, reminder, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarms.canScheduleExactAlarms()) alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent);
             else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent);

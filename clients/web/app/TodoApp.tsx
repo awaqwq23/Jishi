@@ -46,6 +46,7 @@ type NativeBridge = {
   notify: (title: string, body: string, key: string) => void;
   requestNotificationPermission?: () => void | Promise<string>;
   notificationPermissionState?: () => string | Promise<string>;
+  reminderPermissionState?: () => string | Promise<string>;
   syncReminders?: (payload: string) => void;
 };
 type ReminderNotice = { title: string; body: string };
@@ -180,8 +181,8 @@ function occursOn(item: ScheduleItem, dateKey: string) {
   return item.weekdays.includes(day);
 }
 
-function upcomingNativeReminders(data: Bootstrap, now = Date.now()): NativeReminder[] {
-  const horizon = now + 21 * 86400000;
+function upcomingNativeReminders(data: Bootstrap, now = Date.now(), horizonDays = 21): NativeReminder[] {
+  const horizon = now + horizonDays * 86400000;
   const reminders: NativeReminder[] = [];
   for (const todo of data.todos) {
     if (todo.status !== "active" || !todo.deadline) continue;
@@ -194,7 +195,7 @@ function upcomingNativeReminders(data: Bootstrap, now = Date.now()): NativeRemin
   }
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
-  for (let day = 0; day <= 21; day += 1) {
+  for (let day = 0; day <= horizonDays; day += 1) {
     const date = new Date(start.getTime() + day * 86400000);
     const dateKey = localDateKey(date);
     const completed = new Set(data.scheduleRecords.filter((record) => record.occurrenceDate === dateKey).map((record) => record.itemId));
@@ -571,8 +572,17 @@ export default function TodoApp() {
   const [reminderNotice, setReminderNotice] = useState<ReminderNotice | null>(null);
   useEffect(() => {
     const unavailable = () => setNotice("系统未允许后台定时提醒，请检查通知权限；保持应用打开仍可收到页面提醒。");
+    const precision = (event: Event) => {
+      const state = (event as CustomEvent<string>).detail;
+      setNotice(state === "exact" ? "精确定时提醒权限已开启" : "系统通知已开启，但精确定时权限未开启；Android 可能延后提醒");
+      window.setTimeout(() => setNotice(""), 4200);
+    };
     window.addEventListener("jishi-native-reminders-unavailable", unavailable);
-    return () => window.removeEventListener("jishi-native-reminders-unavailable", unavailable);
+    window.addEventListener("jishi-native-reminder-permission", precision);
+    return () => {
+      window.removeEventListener("jishi-native-reminders-unavailable", unavailable);
+      window.removeEventListener("jishi-native-reminder-permission", precision);
+    };
   }, []);
   const notificationHistory = useRef(readNotificationHistory());
   const [localBackgroundUrl, setLocalBackgroundUrl] = useState<string | null>(null);
@@ -642,8 +652,27 @@ export default function TodoApp() {
   }, [data, notificationEnabled]);
   useEffect(() => {
     const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
+    if (!notificationEnabled || !native?.notificationPermissionState) return;
+    let active = true;
+    void Promise.resolve(native.notificationPermissionState()).then((permission) => {
+      if (!active || permission !== "denied") return;
+      localStorage.setItem(NOTIFICATION_KEY, "false");
+      setNotificationEnabled(false);
+      clearNativeReminders();
+      setNotice("系统通知权限已被关闭，本设备提醒已同步停用");
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [notificationEnabled]);
+  useEffect(() => {
+    const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
     if (!data || !native?.syncReminders) return;
-    native.syncReminders(JSON.stringify(notificationEnabled ? upcomingNativeReminders(data) : []));
+    const sync = () => {
+      const horizonDays = /JishiAndroid\//i.test(navigator.userAgent) ? 366 : 21;
+      native.syncReminders?.(JSON.stringify(notificationEnabled ? upcomingNativeReminders(data, Date.now(), horizonDays) : []));
+    };
+    sync();
+    const timer = window.setInterval(sync, 6 * 60 * 60_000);
+    return () => window.clearInterval(timer);
   }, [data, notificationEnabled]);
 
   const settings: SettingsShape = { ...normalizedAppearance(data?.user.settings), backgroundUrl: localBackgroundUrl || undefined };
@@ -838,6 +867,14 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
   const [dataError, setDataError] = useState("");
   const [cropTarget, setCropTarget] = useState<{ file: File; kind: "avatar" | "background" } | null>(null);
   const nativeNotifications = typeof window !== "undefined" && !!(window as Window & { JishiNative?: NativeBridge }).JishiNative;
+  const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  const notificationDescription = /JishiWindows\//i.test(agent)
+    ? "Windows 开启记时后会弹出系统通知；关闭窗口会驻留托盘继续提醒"
+    : /JishiAndroid\//i.test(agent)
+      ? "Android 会申请通知与精确定时权限；退出记时后仍由系统到点通知"
+      : /JishiHarmony\//i.test(agent)
+        ? "鸿蒙会申请消息通知权限，并通过系统代理提醒在应用关闭后到点通知"
+        : nativeNotifications ? "手机客户端可在后台保持定时提醒" : "网页版打开时会显示应用内弹窗，并尝试发送浏览器系统通知";
   const committedAppearance = useRef({ cardOpacity: settings.cardOpacity, backgroundOpacity: settings.backgroundOpacity, acrylic: settings.acrylic, backgroundAcrylic: settings.backgroundAcrylic });
   const [deviceLogin, setDeviceLogin] = useState(readDeviceLogin);
   const updateDeviceLogin = (patch: Partial<DeviceLogin>) => { const next = { ...deviceLogin, ...patch }; if (!next.rememberAccount) Object.assign(next, { rememberPassword: false, autoLogin: false, email: "", password: "" }); if (!next.rememberPassword) Object.assign(next, { autoLogin: false, password: "" }); writeDeviceLogin(next); setDeviceLogin(next); };
@@ -894,7 +931,7 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
       <div className="background-picker">{settings.backgroundUrl ? <div className={`background-preview ${settings.backgroundAcrylic ? "acrylic" : ""}`} role="img" aria-label="当前自定义背景预览" style={{ backgroundImage: `linear-gradient(rgb(244 240 232 / ${1 - settings.backgroundOpacity / 100})), url(${settings.backgroundUrl})` }} /> : <div className="background-empty"><ImagePlus size={24} /><span>还没有本机背景</span></div>}<div className="background-actions"><label className={`upload-button ${backgroundBusy ? "disabled" : ""}`} aria-label={settings.backgroundUrl ? "更换背景图片" : "选择背景图片"}><Crop size={18} />{settings.backgroundUrl ? "更换并裁选图片" : "选择并裁选图片"}<input aria-label="选择背景图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" disabled={backgroundBusy} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "background"); }} /></label>{settings.backgroundUrl && <button className="button secondary background-remove" disabled={backgroundBusy} onClick={() => void clearBackground()}><Trash2 size={17} />移除背景</button>}</div><small className="background-hint">支持 JPEG、PNG、WebP、GIF，最大 5MB；裁选后以固定比例等比保存到本机</small>{backgroundError && <p className="background-error" role="alert">{backgroundError}</p>}</div>
     </section>
     <section className="settings-card"><div className="settings-title"><Filter size={20} /><div><h2>待办分类</h2><p>系统自带分类也可以修改名称和颜色；至少保留一个分类</p></div></div><div className="manage-list">{data.categories.map((category) => <CategorySettingRow key={category.id} category={category} canDelete={data.categories.length > 1} onSave={updateCategory} onDelete={deleteCategory} />)}</div><div className="inline-form"><input value={categoryName} maxLength={12} onChange={(event) => setCategoryName(event.target.value)} placeholder="新增分类，如：游戏" /><button className="button secondary" disabled={!categoryName.trim()} onClick={() => void addCategory()}><Plus size={17} />添加</button></div></section>
-    <section className="settings-card"><div className="settings-title"><Bell size={20} /><div><h2>弹窗与系统通知</h2><p>{nativeNotifications ? "桌面或手机客户端可在后台保持定时提醒" : "网页版打开时会显示应用内弹窗，并尝试发送浏览器系统通知"}</p></div></div><div className="setting-line"><div><strong>{notificationEnabled ? "提醒已开启" : "提醒已关闭"}</strong><small>{notificationsSupported() ? notificationEnabled ? "可点击测试，确认系统通知没有被设备拦截" : "开启时系统会请求通知权限" : "当前浏览器不支持系统通知，但仍可使用页面内提醒"}</small></div><button role="switch" aria-checked={notificationEnabled} className={`switch ${notificationEnabled ? "on" : ""}`} onClick={() => void onToggleNotifications()}><span /></button></div><div className="notification-actions"><button className="button secondary" onClick={() => void onTestNotifications()}>发送测试提醒</button><small>若测试弹窗出现但系统通知没有出现，请在设备的应用通知设置中允许“记时”。</small></div></section>
+    <section className="settings-card"><div className="settings-title"><Bell size={20} /><div><h2>本设备弹窗与系统通知</h2><p>{notificationDescription}</p></div></div><div className="setting-line"><div><strong>{notificationEnabled ? "本设备提醒已开启" : "本设备提醒已关闭"}</strong><small>{notificationsSupported() ? notificationEnabled ? "可点击测试，确认系统通知没有被设备拦截" : "开启时会申请本设备所需的通知权限" : "当前浏览器不支持系统通知，但仍可使用页面内提醒"}</small></div><button role="switch" aria-checked={notificationEnabled} className={`switch ${notificationEnabled ? "on" : ""}`} onClick={() => void onToggleNotifications()}><span /></button></div><div className="notification-actions"><button className="button secondary" onClick={() => void onTestNotifications()}>发送测试提醒</button><small>主页面右上角“提醒”按钮与此开关只控制当前电脑或手机，不影响其他设备。</small></div></section>
     <section className="settings-card"><div className="settings-title"><Bell size={20} /><div><h2>自定义提示时间</h2><p>每个时间点都可单独选择天、小时或分钟，最多设置 8 个</p></div></div><div className="manage-list">{data.reminderPresets.map((preset) => <PresetSettingRow key={preset.id} preset={preset} canDelete={data.reminderPresets.length > 1} onSave={updatePreset} onDelete={deletePreset} />)}</div><div className="new-preset"><input value={presetName} maxLength={20} onChange={(event) => setPresetName(event.target.value)} placeholder="提醒组名称，如：考试" /><ReminderOffsetsEditor value={newOffsets} onChange={setNewOffsets} /><button className="button secondary" disabled={!presetName.trim() || !newOffsets.length} onClick={() => void addPreset()}><Plus size={17} />添加提醒组</button></div></section>
     <section className="settings-card"><div className="settings-title"><Download size={20} /><div><h2>数据导入与导出</h2><p>账户配置不包含密码；本机外观和背景不会上传或导出</p></div></div><div className="data-transfer-list">{([{ key: "config", label: "账户配置" }, { key: "todos", label: "待办" }, { key: "schedules", label: "定期任务" }, { key: "diary", label: "日记" }] as const).map((item) => <div className="data-transfer-row" key={item.key}><strong>{item.label}</strong><div><button className="button secondary compact" onClick={() => void exportSection(item.key, "json").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileJson size={15} />JSON</button><button className="button secondary compact" onClick={() => void exportSection(item.key, "md").catch((reason) => setDataError(reason instanceof Error ? reason.message : "导出失败"))}><FileText size={15} />MD</button><label className="button secondary compact data-import"><Upload size={15} />导入 JSON<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void importSection(item.key, file).catch((reason) => setDataError(reason instanceof Error ? reason.message : "导入失败")); }} /></label></div></div>)}</div>{dataError && <p className="background-error" role="alert">{dataError}</p>}<small className="input-hint data-warning">导入前会再次确认，并替换当前账户中对应模块的数据；建议先导出 JSON 备份。</small></section>
   </div>{cropModal}</>;

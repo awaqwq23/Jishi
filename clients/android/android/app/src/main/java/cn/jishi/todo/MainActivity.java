@@ -1,6 +1,7 @@
 package cn.jishi.todo;
 
 import android.Manifest;
+import android.app.AlarmManager;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
@@ -8,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.provider.Settings;
 import android.webkit.CookieManager;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
@@ -25,6 +27,8 @@ public class MainActivity extends BridgeActivity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 2045;
     private final List<PendingNotification> pendingNotifications = new ArrayList<>();
     private boolean notificationPermissionPending;
+    private boolean exactAlarmPermissionPending;
+    private UpdateDownloadController updateDownloads;
 
     private static class PendingNotification {
         final String title;
@@ -42,6 +46,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         NotificationScheduler.restore(this);
+        updateDownloads = new UpdateDownloadController(this);
         getBridge().getWebView().addJavascriptInterface(new JishiNativeBridge(), "JishiNative");
         getBridge().getWebView().setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
             try {
@@ -66,6 +71,28 @@ public class MainActivity extends BridgeActivity {
                 Toast.makeText(this, "无法开始下载，请稍后重试", Toast.LENGTH_LONG).show();
             }
         });
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        if (updateDownloads != null) updateDownloads.startObserving();
+    }
+
+    @Override
+    public void onStop() {
+        if (updateDownloads != null) updateDownloads.stopObserving();
+        super.onStop();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (exactAlarmPermissionPending) {
+            exactAlarmPermissionPending = false;
+            NotificationScheduler.restore(this);
+            dispatchReminderPrecision();
+        }
     }
 
     private String uniqueDownloadName(String filename) {
@@ -103,11 +130,40 @@ public class MainActivity extends BridgeActivity {
         pendingNotifications.clear();
         notificationPermissionPending = false;
         dispatchNotificationPermission(granted ? "granted" : "denied");
+        if (granted) requestExactAlarmAccess();
     }
 
     private void dispatchNotificationPermission(String state) {
         getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
             "window.dispatchEvent(new CustomEvent('jishi-native-notification-permission',{detail:'" + state + "'}));",
+            null
+        ));
+    }
+
+    private void requestExactAlarmAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            dispatchReminderPrecision();
+            return;
+        }
+        AlarmManager alarms = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        if (alarms.canScheduleExactAlarms()) {
+            dispatchReminderPrecision();
+            return;
+        }
+        try {
+            exactAlarmPermissionPending = true;
+            startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName())));
+        } catch (RuntimeException error) {
+            exactAlarmPermissionPending = false;
+            dispatchReminderPrecision();
+        }
+    }
+
+    private void dispatchReminderPrecision() {
+        boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ((AlarmManager) getSystemService(Context.ALARM_SERVICE)).canScheduleExactAlarms();
+        String state = exact ? "exact" : "approximate";
+        getBridge().getWebView().post(() -> getBridge().getWebView().evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('jishi-native-reminder-permission',{detail:'" + state + "'}));",
             null
         ));
     }
@@ -123,6 +179,7 @@ public class MainActivity extends BridgeActivity {
             runOnUiThread(() -> {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                     dispatchNotificationPermission("granted");
+                    requestExactAlarmAccess();
                     return;
                 }
                 if (!notificationPermissionPending) {
@@ -140,6 +197,22 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public void syncReminders(String payload) {
             runOnUiThread(() -> NotificationScheduler.sync(MainActivity.this, payload, true));
+        }
+
+        @JavascriptInterface
+        public String reminderPermissionState() {
+            boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ((AlarmManager) getSystemService(Context.ALARM_SERVICE)).canScheduleExactAlarms();
+            return exact ? "exact" : "approximate";
+        }
+
+        @JavascriptInterface
+        public String downloadUpdate(String payload) {
+            return updateDownloads.start(payload);
+        }
+
+        @JavascriptInterface
+        public String updateDownloadState() {
+            return updateDownloads.currentState();
         }
     }
 }

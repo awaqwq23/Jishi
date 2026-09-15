@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, Menu, net, Notification, shell, Tray } = re
 const path = require("node:path");
 const config = require(path.join(__dirname, "app-config.json"));
 const { resolveAppUrl, uniqueUrls } = require(path.join(__dirname, "host-resolver.cjs"));
+const { createUpdateDownloader, safeRequest } = require(path.join(__dirname, "update-downloader.cjs"));
 
 const APP_URLS = uniqueUrls([process.env.JISHI_WEB_URL, config.webUrl, ...(config.fallbackUrls || [])]);
 const APP_ORIGINS = [...new Set(APP_URLS.map((url) => new URL(url).origin))];
@@ -12,6 +13,7 @@ const reminderTimers = new Map();
 let tray;
 let mainWindow;
 let isQuitting = false;
+let updateDownloader;
 
 app.setAppUserModelId("cn.jishi.todo");
 
@@ -39,6 +41,16 @@ function syncNativeReminders(window, payload) {
 
 function isTrustedSender(event) {
   try { return APP_ORIGINS.includes(new URL(event.senderFrame.url).origin); } catch { return false; }
+}
+
+function sendDownloadState(state) {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send("jishi:update-download", state);
+}
+
+function parseTrustedUpdate(payload) {
+  const request = safeRequest(JSON.parse(String(payload)));
+  if (!APP_ORIGINS.includes(new URL(request.url).origin)) throw new Error("更新下载来源不受信任");
+  return request;
 }
 
 function createWindow(appUrl) {
@@ -79,7 +91,14 @@ async function installTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "打开记时", click: showWindow },
     { type: "separator" },
-    { label: "退出", click: () => { isQuitting = true; app.quit(); } },
+    { label: "退出", click: () => {
+      if (updateDownloader?.isActive()) {
+        showWindow();
+        showNativeNotification(mainWindow, "更新仍在下载", "关闭窗口不会中断；下载完成并校验后才能完全退出。");
+        return;
+      }
+      isQuitting = true; app.quit();
+    } },
   ]));
 }
 
@@ -99,11 +118,31 @@ async function openWindow() {
 ipcMain.on("jishi:notify", (event, title, body) => { if (isTrustedSender(event)) showNativeNotification(BrowserWindow.fromWebContents(event.sender), title, body); });
 ipcMain.on("jishi:sync-reminders", (event, payload) => { if (isTrustedSender(event)) syncNativeReminders(BrowserWindow.fromWebContents(event.sender), payload); });
 ipcMain.handle("jishi:notification-permission", (event) => isTrustedSender(event) && Notification.isSupported() ? "granted" : "denied");
+ipcMain.handle("jishi:update-download-state", (event) => isTrustedSender(event) ? updateDownloader?.getState() : { status: "failed", message: "更新页面来源不受信任" });
+ipcMain.handle("jishi:update-download-start", (event, payload) => {
+  if (!isTrustedSender(event) || !updateDownloader) return { status: "failed", message: "无法启动更新下载" };
+  let request;
+  try { request = parseTrustedUpdate(payload); }
+  catch (error) { return { status: "failed", message: error instanceof Error ? error.message : "更新信息无效" }; }
+  void updateDownloader.start(request);
+  return updateDownloader.getState();
+});
 
 app.whenReady().then(async () => {
+  updateDownloader = createUpdateDownloader({
+    fetchImpl: net.fetch,
+    stateDir: path.join(app.getPath("userData"), "update-download"),
+    downloadsDir: app.getPath("downloads"),
+    onState: sendDownloadState,
+    onCompleted: async (savePath) => {
+      showNativeNotification(mainWindow, "记时更新下载完成", "安装包已校验并保存，点击通知可返回记时。");
+      shell.showItemInFolder(savePath);
+    },
+  });
   try { await installTray(); } catch (error) { console.warn("Unable to create the system tray; closing the window will exit.", error); }
   await openWindow();
+  void updateDownloader.resumePending();
   app.on("activate", () => mainWindow && !mainWindow.isDestroyed() ? (mainWindow.show(), mainWindow.focus()) : void openWindow());
 });
-app.on("before-quit", () => { isQuitting = true; });
+app.on("before-quit", () => { isQuitting = true; updateDownloader?.pause(); });
 app.on("window-all-closed", () => { if (!tray && process.platform !== "darwin") app.quit(); });

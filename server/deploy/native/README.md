@@ -7,7 +7,7 @@
 - Windows 客户端通过 `JishiWindows/<version>` User-Agent 报告版本。
 - Android 客户端通过 `JishiAndroid/<version>` User-Agent 报告版本。
 - Web 页面启动后、回到前台时及每 5 分钟请求 `/updates/latest.json`。
-- 安装包版本较新时显示下载更新弹窗；按钮使用当前页面同源的 `/downloads/`（兼容根路径和 `/note`），避免备用域名之间跳转失败；只有 Web 源码更新时显示刷新弹窗。
+- 安装包版本较新时显示下载更新弹窗；按钮使用当前页面同源的 `/downloads/`（兼容根路径和 `/note`），避免备用域名之间跳转失败；弹窗显示百分比、速度和剩余时间。Windows 原生壳使用八路 Range 下载和跨启动断点续传，Android 使用系统 DownloadManager 持久下载；只有 Web 源码更新时显示刷新弹窗。
 - Nginx 为安装包响应添加 `Content-Disposition: attachment`，确保 Electron、Android WebView 和普通浏览器都按文件下载处理。
 - `jishi-web.service` 每次成功启动后执行 `mark-deployment.sh`。脚本按已部署的 Web 源码计算稳定哈希；源码没有变化的普通重启不会重复提示。
 
