@@ -243,6 +243,9 @@ assert not bad,bad'
 trap - ERR
 # Only after every verification: retain the single freshly created previous-
 # version backup. These exact old targets were inventoried before deployment.
+test -d "$backup" && test ! -L "$backup"
+test "$(realpath "$backup")" = "$backup"
+test -f "$backup/production.tar.aesgcm" && test ! -L "$backup/production.tar.aesgcm"
 sha256sum -c "$backup/SHA256SUMS"
 for candidate in "${old_backups[@]}"; do
   test -d "$candidate" && test ! -L "$candidate"
