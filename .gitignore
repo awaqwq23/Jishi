@@ -60,9 +60,13 @@ yarn-error.log*
 /服务器设置.*
 *.p12
 *.pfx
+*.csr
+*.cer
+*.p7b
 *.key
 **/oh_modules/
 **/.hvigor/
 /clients/harmony/local.properties
+/clients/harmony/signing.local.json5
 /clients/harmony/entry/build/
 /clients/harmony/build/

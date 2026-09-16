@@ -13,7 +13,14 @@
 3. 在 DevEco Studio 中配置调试签名；真机安装必须使用与设备/账号匹配的签名证书。
 4. 在 PowerShell 执行 `./build-hap.ps1 -HvigorPath <hvigorw.bat或hvigor.js路径>`，或在 DevEco Studio 中选择 **Build > Build Hap(s)/APP(s) > Build Hap(s)**。
 
-脚本自动复制必要工程文件到 ASCII 临时目录，解决中文仓库路径无法编译的问题；输出复制到仓库 `outputs/harmony/`，并打印 SHA256。临时目录保留编译日志。发布 APP 使用 `-BuildMode release -Artifact app`。没有签名配置时只能产生 unsigned 包，不能直接安装或提交商店。
+脚本自动复制必要工程文件到 ASCII 临时目录，解决中文仓库路径无法编译的问题；输出复制到仓库 `outputs/harmony/`，并打印 SHA256。普通 debug 临时目录保留编译日志。发布 HAP/APP 必须提供发布签名配置，且用 SDK 工具验证 HAP 签名后才交付；含签名配置的临时目录在构建结束时清理。
+
+## 发布签名（开发者本人操作）
+
+1. 在 AppGallery Connect 确认 HarmonyOS 应用包名为 `cn.jishi.todo`，在“开发与服务 > 项目设置 > 开放能力管理”申请并获批“代理提醒”；此能力获批后要重新生成发布 Profile，使用**手动签名**。没有获批前不要宣称应用关闭后仍能到点提醒。
+2. 用 DevEco Studio **Build > Generate Key and CSR** 生成发布 `.p12` 和 `.csr`；密钥密码由开发者本人创建和保管。将 CSR 提交 AppGallery Connect 申请“发布证书”并下载 `.cer`，再申请对应应用、证书及已获批能力的“发布 Profile”并下载 `.p7b`。不要把 `.p12`、密码、`.csr` 或含密码的签名配置发到聊天、Git 或发布资料。
+3. 在 DevEco Studio **File > Project Structure > Project > Signing Configs** 中关闭自动签名，选择发布 `.p12`、`.cer`、`.p7b`，填写密钥别名及密码，签名算法使用 `SHA256withECDSA`；确认 `build-profile.json5` 的 default product 关联发布签名配置。将配置后的工程级文件复制为仓库 Git 忽略的 `clients/harmony/signing.local.json5`，然后恢复受 Git 跟踪的 `build-profile.json5` 为无秘密版本。也可通过 `-SigningProfilePath` 指向仓库外的配置文件；脚本不会输出其内容。
+4. 在 PowerShell 执行 `./build-hap.ps1 -BuildMode release -Artifact hap` 和 `./build-hap.ps1 -BuildMode release -Artifact app`（同时指定有效 `-HvigorPath`、`-SdkHome`，或先设置对应环境变量）。签名文件默认读取 `signing.local.json5`；release 构建缺少它会失败，不会产出新的 unsigned 交付物。上传 AppGallery Connect 的是已签名 `.app`；真机验收可使用已签名 `.hap`。
 
 ## 上架前仍需完成
 
