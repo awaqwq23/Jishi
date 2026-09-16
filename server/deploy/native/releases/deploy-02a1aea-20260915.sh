@@ -6,8 +6,11 @@ umask 077
 # confirmation after its exact command and rollback scope have been shown.
 feature_commit=02a1aea9071cea4628dcdd1dbd577be089084a46
 stage=/opt/jishi-stage-02a1aea
-backup=/var/backups/jishi/pre-02a1aea-20260915-progress-notifications
-old_backup=/var/backups/jishi/pre-682c7cd-20260914-updates
+backup=/var/backups/jishi/pre-02a1aea-20260916-progress-notifications
+old_backups=(
+  /var/backups/jishi/pre-682c7cd-20260914-updates
+  /var/backups/jishi/pre-02a1aea-20260915-progress-notifications
+)
 downloads=/var/www/jishi-downloads
 key=/etc/jishi/backup-20260909.key
 crypto="$stage/scripts/backup-crypto.mjs"
@@ -39,8 +42,10 @@ for path in "$stage" /opt/jishi /var/lib/jishi "$downloads" /var/backups/jishi; 
   test "$(realpath "$path")" = "$path"
 done
 test ! -e "$backup" && test ! -L "$backup"
-test -d "$old_backup" && test ! -L "$old_backup"
-test "$(realpath "$old_backup")" = "$old_backup"
+for old_backup in "${old_backups[@]}"; do
+  test -d "$old_backup" && test ! -L "$old_backup"
+  test "$(realpath "$old_backup")" = "$old_backup"
+done
 test -f "$key" && test ! -L "$key"
 test "$(stat -c %a "$key")" = 600 && test "$(stat -c %s "$key")" = 32
 test -f "$stage/server/deploy/native/releases/deploy-02a1aea-20260915.sh"
@@ -72,7 +77,15 @@ started="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 nginx_lines="$(wc -l < /var/log/nginx/access.log)"
 ready=0
 mutated=0
+rolling_back=0
 rollback() {
+  if [[ "$rolling_back" = 1 ]]; then
+    trap - ERR
+    set +e
+    echo 'rollback_already_attempted=1; leaving services as found for manual inspection' >&2
+    exit 1
+  fi
+  rolling_back=1
   trap - ERR
   set +e
   if [[ "$ready" = 1 && "$mutated" = 1 ]]; then
@@ -88,11 +101,16 @@ rollback() {
     install -m 0644 "$backup/restore/etc/systemd/system/jishi-web.service" /etc/systemd/system/jishi-web.service
     secret_gate || exit 95
     systemctl daemon-reload
-    systemctl start jishi-api && systemctl start jishi-web
+    systemctl start jishi-api || exit 96
+    curl -fsS --retry 20 --retry-delay 2 --retry-connrefused http://127.0.0.1:8787/health >/dev/null || exit 97
+    systemctl start jishi-web || exit 98
+    curl -fsS --retry 20 --retry-delay 2 --retry-connrefused http://127.0.0.1:3000/ >/dev/null || exit 99
     echo "rollback=restored backup=$backup" >&2
   else
-    systemctl start jishi-api
-    systemctl start jishi-web
+    systemctl start jishi-api || exit 96
+    curl -fsS --retry 20 --retry-delay 2 --retry-connrefused http://127.0.0.1:8787/health >/dev/null || exit 97
+    systemctl start jishi-web || exit 98
+    curl -fsS --retry 20 --retry-delay 2 --retry-connrefused http://127.0.0.1:3000/ >/dev/null || exit 99
     echo "rollback=original-services-restarted" >&2
   fi
   exit 1
@@ -124,6 +142,10 @@ chmod 0755 /opt/jishi/server/deploy/native/mark-deployment.sh
 install -o awaqwq233 -g awaqwq233 -m 0644 "$stage/Jishi-Windows-Setup-0.4.6.exe" "$downloads/Jishi-Windows-Setup-0.4.6.exe"
 install -o awaqwq233 -g awaqwq233 -m 0644 "$stage/Jishi-Android-0.4.7.apk" "$downloads/Jishi-Android-0.4.7.apk"
 install -o awaqwq233 -g awaqwq233 -m 0644 "$stage/clients/web/public/updates/latest.json" "$downloads/latest.json"
+# The update-contract checker reads installers from the repository root. Keep
+# verified local copies there as well as the Nginx download directory.
+install -o awaqwq233 -g awaqwq233 -m 0644 "$stage/Jishi-Windows-Setup-0.4.6.exe" /opt/jishi/Jishi-Windows-Setup-0.4.6.exe
+install -o awaqwq233 -g awaqwq233 -m 0644 "$stage/Jishi-Android-0.4.7.apk" /opt/jishi/Jishi-Android-0.4.7.apk
 secret_gate
 systemctl daemon-reload
 systemctl start jishi-api
@@ -221,7 +243,8 @@ assert not bad,bad'
 trap - ERR
 # Only after every verification: retain the single freshly created previous-
 # version backup. These exact old targets were inventoried before deployment.
-for candidate in "$old_backup"; do
+sha256sum -c "$backup/SHA256SUMS"
+for candidate in "${old_backups[@]}"; do
   test -d "$candidate" && test ! -L "$candidate"
   test "$(realpath "$candidate")" = "$candidate"
   test "$(dirname "$candidate")" = /var/backups/jishi
