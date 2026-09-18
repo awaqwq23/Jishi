@@ -34,6 +34,7 @@
 - 用本机 HarmonyOS SDK `hap-sign-tool.jar verify-profile` 核对下载的发布 Profile，结果 `verifiedPassed=true`、`type=release`、包名 `cn.jishi.todo`、APP ID 匹配；`app-privilege-capabilities` 为空。验证输出保存在 Git 忽略目录，不包含在提交或发布包中。由此进一步确认当前 Profile 尚未授予代理提醒能力。
 - 用户仅在本机可见窗口输入 P12 密码，未发到聊天或仓库。`hap-sign-tool.jar sign-app` 生成 `outputs/harmony/Jishi-Harmony-0.3.1-signed-test.hap`；独立运行 `verify-app` 显示 `verify codesign success`、`verify permission sign success`、`Verify success`，文件大小 480,210 bytes，SHA-256 `1B1336BD7D9E2A9AA751FC9931D8E9767CF4944C239CC3D0015CC6A041296A28`。首次本机助手脚本在签名和验签后调用 Windows PowerShell 5.1 不可用的 `Get-FileHash`，误记为失败；独立验签和 .NET SHA-256 重算成功，助手脚本已改为 .NET SHA-256。此 HAP 仅能作为真机 UI 测试候选，尚无真机安装验证，且未获代理提醒授权。
 - 曾用 SDK `app_packing_tool.jar --mode multiApp` 从上述 signed HAP 试生成 `outputs/harmony/Jishi-Harmony-0.3.1-signed-test.app`；SDK 拆包后其中 HAP 仅 462,550 bytes，`verify-app` 报 `signature not found`，因此该 APP **无效、禁止上传或分发**。需要按 DevEco/Hvigor 的正式签名配置重新构建 signed APP，随后抽取内含 HAP 独立验签；不得把测试 HAP 签名成功当作上架包完成。
+- 为隔离打包问题，又将 SDK 生成的 `pack.info` 与逐字节未改动的 signed HAP 放入 APP 容器，得到本地 `outputs/harmony/Jishi-Harmony-0.3.1-signed-candidate.app`（480,977 bytes，SHA-256 `EF8D1CC4B827165711B6490B0103C0810FCCD040265E7CA17F607490400256DE`）。SDK `app_unpacking_tool.jar --mode app` 能解析并拆包，内含 HAP 的 SHA-256 与原 signed HAP 一致，独立 `verify-app` 再次通过。此为**本地候选包**，尚未通过 DevEco 正式 release 构建、华为上传校验或真机验证，也没有代理提醒授权；不得将这些本地检查等同于可上架状态。
 - 开发者本人需保管发布私钥和密码；不得发到聊天、Git 或发布资料。签名后还需真实鸿蒙设备验证主备站、登录和后台提醒，以及核对商店所需的隐私政策、账号注销和真实素材。
 
 ## 验证与发布结果
