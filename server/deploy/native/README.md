@@ -9,6 +9,7 @@
 - Web 页面启动后、回到前台时及每 5 分钟请求 `/updates/latest.json`。
 - 安装包版本较新时显示下载更新弹窗；按钮使用当前页面同源的 `/downloads/`（兼容根路径和 `/note`），避免备用域名之间跳转失败；弹窗显示百分比、速度和剩余时间。Windows 原生壳使用八路 Range 下载和跨启动断点续传，Android 使用系统 DownloadManager 持久下载；只有 Web 源码更新时显示刷新弹窗。
 - Nginx 为安装包响应添加 `Content-Disposition: attachment`，确保 Electron、Android WebView 和普通浏览器都按文件下载处理。
+- 更新弹窗同时提供 GitHub Release 的对应安装包直链，供服务器下载缓慢时使用。两处安装包须具有相同 SHA-256；下载后由用户按系统提示覆盖安装。Windows/Android 安装包版本更新后先运行 `npm run check:updates`，推送本次提交并等待 `.github/workflows/publish-client-release.yml` 成功，核对 Release 资产，再启用新的生产清单。只改 Web/Server 时沿用现有 Release。
 - `jishi-web.service` 每次成功启动后执行 `mark-deployment.sh`。脚本按已部署的 Web 源码计算稳定哈希；源码没有变化的普通重启不会重复提示。
 
 人工验收时可访问 `/?client=windows&version=0.3.1` 或 `/?client=android&version=0.3.1` 模拟旧客户端。该参数只影响页面端版本识别，不会修改账号或服务端数据。

@@ -26,6 +26,7 @@
 - 只修改远程 Web/Server 时，可以维持 Windows/Android 安装包版本，但必须重新生成并发布 Web `releaseId`/`webBuild`，让已安装客户端刷新。
 - 修改 Electron/Capacitor 原生壳、主机解析、离线页或本地权限时，必须提升对应客户端版本和构建号，重建安装包，并同步所有版本标记、文件名、SHA256、大小和更新清单。
 - 发布前运行 `npm run check:updates`，确认更新清单、安装包、客户端标记和主机配置一致。
+- Windows/Android 安装包更新时，在生产清单启用新版本前，将同一份经 SHA-256 校验的安装包发布到公开 GitHub Release；清单保留服务器 `downloadUrl` 并增量提供 `githubUrl`。GitHub Actions 自动执行 `scripts/publish-github-release.mjs`，发布后核对两个 Release 资产的大小、SHA-256 和下载链接。仅 Web/Server 更新且安装包版本不变时沿用已核验的对应 Release。
 - Web `webBuild` 必须使用跨平台稳定算法计算；文本文件在哈希前统一为 LF。发布前必须在 Windows 工作区和 Linux 暂存目录分别重算并得到相同结果。
 - 不得用新安装包强迫解决本可由向后兼容 Server/Web 修复的问题。
 

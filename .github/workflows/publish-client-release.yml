@@ -1,0 +1,30 @@
+name: Publish client packages to GitHub
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Jishi-Windows-Setup-*.exe
+      - Jishi-Android-*.apk
+      - clients/web/public/updates/latest.json
+      - scripts/publish-github-release.mjs
+      - .github/workflows/publish-client-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify package and manifest contract
+        run: node scripts/test-update-contract.mjs
+      - name: Publish and verify GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/publish-github-release.mjs

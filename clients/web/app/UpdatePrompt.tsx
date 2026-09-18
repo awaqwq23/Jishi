@@ -1,11 +1,11 @@
 "use client";
 
-import { Check, Download, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { Check, Download, ExternalLink, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { withRuntimeBase } from "./runtime-path";
 
 type NativePlatform = "windows" | "android";
-type ClientRelease = { version: string; downloadUrl: string; sha256: string; size: number; required?: boolean };
+type ClientRelease = { version: string; downloadUrl: string; githubUrl?: string; sha256: string; size: number; required?: boolean };
 type UpdateManifest = { schemaVersion: 1; releaseId: string; publishedAt: string; notes: string[]; clients: Record<NativePlatform, ClientRelease> };
 type ClientIdentity = { platform: NativePlatform | "web"; version: string | null };
 type PromptState = { kind: "binary" | "content"; identity: ClientIdentity; manifest: UpdateManifest; release?: ClientRelease };
@@ -57,6 +57,18 @@ function currentHostDownloadUrl(advertisedUrl: string) {
   const filename = advertised.pathname.split("/").at(-1) || "";
   if (!/^Jishi-(?:Windows-Setup|Android)-[0-9]+(?:\.[0-9]+){2}\.(?:exe|apk)$/.test(filename)) return advertised.toString();
   return new URL(withRuntimeBase(`/downloads/${filename}`), window.location.origin).toString();
+}
+
+function trustedGithubUrl(release: ClientRelease, manifest: UpdateManifest) {
+  if (!release.githubUrl) return null;
+  try {
+    const url = new URL(release.githubUrl);
+    const filename = new URL(release.downloadUrl).pathname.split("/").at(-1);
+    if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password || url.search || url.hash) return null;
+    const tag = `clients-v${manifest.clients.windows.version}-a${manifest.clients.android.version}`;
+    if (url.pathname !== `/awaqwq23/Jishi/releases/download/${tag}/${filename}`) return null;
+    return url.toString();
+  } catch { return null; }
 }
 
 function updateBridge() { return (window as Window & { JishiNative?: UpdateBridge }).JishiNative; }
@@ -230,6 +242,7 @@ export default function UpdatePrompt() {
   const platformName = prompt.identity.platform === "windows" ? "Windows" : prompt.identity.platform === "android" ? "Android" : "应用";
   const busy = downloadState?.status === "starting" || downloadState?.status === "downloading" || downloadState?.status === "verifying";
   const done = downloadState?.status === "completed";
+  const githubUrl = prompt.release ? trustedGithubUrl(prompt.release, prompt.manifest) : null;
   return <div className="update-layer" role="presentation">
     <section className="update-card" role="dialog" aria-modal="true" aria-labelledby="update-title">
       {!prompt.release?.required && !busy && <button className="update-close" onClick={later} aria-label="稍后更新"><X size={19} /></button>}
@@ -247,10 +260,12 @@ export default function UpdatePrompt() {
       <div className="update-trust"><ShieldCheck size={16} /><span>安装包通过 HTTPS 下载；新版客户端完成后自动校验 SHA-256</span></div>
       <div className="update-actions">
         {!prompt.release?.required && !busy && !done && <button className="button secondary" onClick={later}>稍后提醒</button>}
+        {prompt.kind === "binary" && githubUrl && !done && <a className="button secondary" href={githubUrl} target={prompt.identity.platform === "windows" ? "_blank" : undefined} rel="noopener noreferrer"><ExternalLink size={17} />从 GitHub 下载</a>}
         {prompt.kind === "binary"
           ? <button className="button primary" disabled={busy || done || downloadState?.status === "background"} onClick={() => void download()}><Download size={17} />{busy ? "下载中…" : done ? "已保存" : downloadState?.status === "paused" || downloadState?.status === "failed" ? "继续下载" : "下载更新"}</button>
           : <button className="button primary" onClick={() => void refresh()}><RefreshCw size={17} />立即刷新</button>}
       </div>
+      {prompt.kind === "binary" && githubUrl && <p className="update-install-note">下载完成后打开安装包，按提示覆盖安装；账号和云端待办仍会保留。请确认文件名与此版本一致。</p>}
     </section>
   </div>;
 }
