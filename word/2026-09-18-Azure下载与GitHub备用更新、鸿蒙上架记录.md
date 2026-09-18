@@ -25,13 +25,15 @@
 
 ## 鸿蒙发布状态
 
-- 当前工程只有 unsigned 0.3.1 HAP/APP；发布签名材料已经取得，但还没有生成或核验签名版。release 构建门禁会拒绝未签名交付物。
+- 当前工程的原始 0.3.1 HAP/APP 均为 unsigned；已用发布证书与发布 Profile 对原始 HAP 进行本地交互式签名，生成并核验测试用 signed HAP。尚无可提交应用市场的有效 signed APP。release 构建门禁仍会拒绝未签名交付物。
 - 2026-09-18 连接 AppGallery Connect，确认 HarmonyOS APP ID `6917615912834362075`、应用名“记时”、包名 `cn.jishi.todo`；应用记录创建于 2026-09-09，至今状态“未提交”。
 - 开发者本人在可见 PowerShell 窗口输入新密钥密码并生成 `.p12` 和 `.csr`。经用户当下确认，华为接受 CSR，`Jishi Harmony Release 2026` 发布证书状态“生效”，有效期至 2029-09-18；已下载 `.cer`。用户再次当下确认创建发布 Profile，华为显示“Profile已添加成功”，状态“生效”，有效期至 2029-09-18；已下载 `.p7b`。四份签名材料仅保存在 Git 忽略的 `work/harmony-signing/`，不在 Git 中；本记录不含密码、私钥或 CSR 内容。
 - 在“开放能力管理”确认“代理提醒”原状态为“未申请”。经用户当下确认，根据 `TodoApp.tsx` 和 `ReminderScheduler.ets` 的真实行为填写申请原因，并上传明确标注为源码说明的 `work/harmony-signing/agent-reminder-source-evidence.txt`。申请单号 `461323198976968811` 曾显示“处理中”。随后华为发来“未通过”：要求补充 APP 内用户主动设置倒计时、日历或闹钟提醒的真实功能截图，以及 AppGallery Connect“应用上架 → 应用信息”的分类信息截图。源码说明不能替代功能截图。
 - 华为退回时应用分类确实为空。重新登录后已将分类“应用 / 效率”和主标签“日程清单”分别保存，页面均显示“保存成功”；公开客服邮箱 `820288706@qq.com` 也已保存。应用市场图标仍未上传；当前工程 `app_icon.png` 为 1731×909 横幅，与页面要求的 216×216 或 1024×1024 方形图标不符。不能用与安装包不一致的商店图标冒充完成。
 - 代理提醒重新申请待真实应用截图与分类截图备齐。能力获批后，需要更新发布 Profile 并重新签包；目前不能宣称提醒在应用关闭后已得到华为授权。
 - 用本机 HarmonyOS SDK `hap-sign-tool.jar verify-profile` 核对下载的发布 Profile，结果 `verifiedPassed=true`、`type=release`、包名 `cn.jishi.todo`、APP ID 匹配；`app-privilege-capabilities` 为空。验证输出保存在 Git 忽略目录，不包含在提交或发布包中。由此进一步确认当前 Profile 尚未授予代理提醒能力。
+- 用户仅在本机可见窗口输入 P12 密码，未发到聊天或仓库。`hap-sign-tool.jar sign-app` 生成 `outputs/harmony/Jishi-Harmony-0.3.1-signed-test.hap`；独立运行 `verify-app` 显示 `verify codesign success`、`verify permission sign success`、`Verify success`，文件大小 480,210 bytes，SHA-256 `1B1336BD7D9E2A9AA751FC9931D8E9767CF4944C239CC3D0015CC6A041296A28`。首次本机助手脚本在签名和验签后调用 Windows PowerShell 5.1 不可用的 `Get-FileHash`，误记为失败；独立验签和 .NET SHA-256 重算成功，助手脚本已改为 .NET SHA-256。此 HAP 仅能作为真机 UI 测试候选，尚无真机安装验证，且未获代理提醒授权。
+- 曾用 SDK `app_packing_tool.jar --mode multiApp` 从上述 signed HAP 试生成 `outputs/harmony/Jishi-Harmony-0.3.1-signed-test.app`；SDK 拆包后其中 HAP 仅 462,550 bytes，`verify-app` 报 `signature not found`，因此该 APP **无效、禁止上传或分发**。需要按 DevEco/Hvigor 的正式签名配置重新构建 signed APP，随后抽取内含 HAP 独立验签；不得把测试 HAP 签名成功当作上架包完成。
 - 开发者本人需保管发布私钥和密码；不得发到聊天、Git 或发布资料。签名后还需真实鸿蒙设备验证主备站、登录和后台提醒，以及核对商店所需的隐私政策、账号注销和真实素材。
 
 ## 验证与发布结果
@@ -48,4 +50,4 @@
 - 自动探针中的现有账号签名会话不等于真实密码登录。实际账号/设备检查尚未完成，因此生产切换即使自动探针通过，也先保留新旧两份加密备份与暂存目录，不执行清理；真实验收后再按 `AGENTS.md` 枚举核验并只保留最新一份前一版本备份。
 - 用户于 2026-09-18 明确确认上述生产命令。再次运行 `--preflight` 通过后，执行 `sudo -n bash /opt/jishi-stage-b410f25/server/deploy/native/releases/deploy-b410f25-20260918.sh`，退出码 0，输出 `deployment=automated-pass`。部署前完整加密备份为 `/var/backups/jishi/pre-b410f25-20260918-github-update/production.tar.aesgcm`（1,427,998,763 bytes），校验文件通过。API/Web 启动期间出现短暂本机连接重试，最终 Nginx 配置测试和公网、JSON 401、签名会话 bootstrap、下载、表结构检查均通过。
 - 部署后独立核对：`jishi-api`、`jishi-web`、`nginx` 均 active；公网 `/note/` 与 `/note/health` 返回 200，健康内容为 `{"status":"ok","service":"jishi-api"}`；公网更新清单哈希 `e0d3993ed51c13f8f6fcfbbe63d42c1e8913e1e72e9a094dc5f4befb8dfa223d` 与 Linux 暂存相同，`releaseId` 为 `web-1eb33d5ff18eb60d`，Windows/Android `githubUrl` 均已上线。部署后 10 分钟 API/Web 的 error 级别 journal 无记录。
-- 自动签名会话仍不能代替实际用户密码登录或真实设备点选 GitHub 下载。根据发布脚本结果，`real_account_check=pending cleanup=pending`；保留本次和此前两份备份及暂存目录，待真实验收通过再执行保留清理。鸿蒙签名、真机验收和华为应用市场提交尚未完成。
+- 自动签名会话仍不能代替实际用户密码登录或真实设备点选 GitHub 下载。根据发布脚本结果，`real_account_check=pending cleanup=pending`；保留本次和此前两份备份及暂存目录，待真实验收通过再执行保留清理。鸿蒙测试 HAP 已签名且本机验签，正式 APP 构建、真机验收、代理提醒重申请和华为应用市场提交尚未完成。
