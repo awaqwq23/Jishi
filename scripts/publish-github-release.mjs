@@ -20,9 +20,9 @@ function githubToken() {
   return password;
 }
 
-const token = githubToken();
+const token = verifyOnly ? (process.env.GH_TOKEN || process.env.GITHUB_TOKEN) : githubToken();
 const headers = {
-  Authorization: `Bearer ${token}`,
+  ...(token ? { Authorization: `Bearer ${token}` } : {}),
   Accept: "application/vnd.github+json",
   "X-GitHub-Api-Version": "2022-11-28",
   "User-Agent": "Jishi-client-release",
