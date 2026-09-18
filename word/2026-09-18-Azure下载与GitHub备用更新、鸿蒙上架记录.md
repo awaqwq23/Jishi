@@ -37,4 +37,8 @@
 - Linux 独立暂存目录 `/opt/jishi-stage-b410f25` 从已推送提交检出，`npm ci` 成功。暂存 `npm run check` 通过 Server 6/6、Web 4/4、Windows 7/7、加密备份 1/1、TypeScript、dry-run、lint、构建与更新契约；全新独立 `.stage-d1` 完整迁移 `0000`、`0001`、`0002` 成功，未触碰生产数据库。Linux `npm audit --audit-level=high` 无 high/critical，仍有 4 个 moderate。Linux 清单 SHA-256 `e0d3993ed51c13f8f6fcfbbe63d42c1e8913e1e72e9a094dc5f4befb8dfa223d` 与 Windows 一致，`webBuild` 同为 `1eb33d5ff18eb60d1658b947aff42c57f71231e47bedef1946bd6eb95319acfc`。
 - 生产只读检查：API/Web/Nginx 均 active；旧清单哈希为 `b93752517e10a05c1708128b6c482aae7deb40a738b8bdf021106b21922ec433`，生产 Nginx 配置哈希为 `6b78ae9f26c6adb819ff0be45c5a72ee300002baec866baabf59ae8d7e591781`，当前唯一旧备份为 `/var/backups/jishi/pre-02a1aea-20260916-progress-notifications`，磁盘可用约 15 GiB。
 - 新生产守卫脚本目标为 `server/deploy/native/releases/deploy-b410f25-20260918.sh`；部署前将完整旧生产版本加密备份到 `/var/backups/jishi/pre-b410f25-20260918-github-update`。自动核验会检查旧接口、无效登录 JSON 401、现有用户签名会话 bootstrap、清单/安装包、服务与旧客户端日志。签名会话不能替代真实密码登录；在用户完成真实账号/设备验收前，新旧两份备份与暂存目录均保留，不执行清理。
-- 待补充发布守卫提交号、Linux `--preflight` 结果、准确生产命令和最终确认、部署与真实账号验收。未通过的环节不得写为完成。
+- 发布守卫提交 `27f431bd0f5638e068ee58c94559c8f8b4fbad82` 已推送 `origin/main`，对应 GitHub Actions 运行 `35291723344` 成功。暂存目录已快进到该提交；脚本 `bash -n` 通过，`node scripts/publish-github-release.mjs --verify` 从暂存 Linux 环境通过。
+- `sudo -n bash /opt/jishi-stage-b410f25/server/deploy/native/releases/deploy-b410f25-20260918.sh --preflight` 只读通过：暂存及旧生产清单哈希、两个安装包、Nginx 原配置、秘密文件存在/权限/所有者/长度、三个服务、更新契约、GitHub 资产及新备份目标均符合预期。此步没有停服务或创建备份。
+- 待用户查看后最终明确确认的生产命令：`sudo -n bash /opt/jishi-stage-b410f25/server/deploy/native/releases/deploy-b410f25-20260918.sh`。脚本先停止 API/Web 并创建、解密比较新加密备份，再同步 Web/Server 代码和清单（保留 `.dev.vars`、`.env*`、数据库、媒体与生产 Nginx 配置），按 API、Web、Nginx 顺序启动并核验。短暂停机发生于停止 API/Web 至健康检查恢复；失败则从新备份回滚。实际耗时不能仅凭预检保证。
+- 自动探针中的现有账号签名会话不等于真实密码登录。实际账号/设备检查尚未完成，因此生产切换即使自动探针通过，也先保留新旧两份加密备份与暂存目录，不执行清理；真实验收后再按 `AGENTS.md` 枚举核验并只保留最新一份前一版本备份。
+- 截至本记录更新，**尚未执行生产命令**，正式站点尚未显示 GitHub 备用更新入口；鸿蒙签名、真机验收和华为应用市场提交也尚未完成。未通过的环节不得写为完成。
