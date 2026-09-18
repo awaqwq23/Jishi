@@ -52,3 +52,9 @@
 - 用户于 2026-09-18 明确确认上述生产命令。再次运行 `--preflight` 通过后，执行 `sudo -n bash /opt/jishi-stage-b410f25/server/deploy/native/releases/deploy-b410f25-20260918.sh`，退出码 0，输出 `deployment=automated-pass`。部署前完整加密备份为 `/var/backups/jishi/pre-b410f25-20260918-github-update/production.tar.aesgcm`（1,427,998,763 bytes），校验文件通过。API/Web 启动期间出现短暂本机连接重试，最终 Nginx 配置测试和公网、JSON 401、签名会话 bootstrap、下载、表结构检查均通过。
 - 部署后独立核对：`jishi-api`、`jishi-web`、`nginx` 均 active；公网 `/note/` 与 `/note/health` 返回 200，健康内容为 `{"status":"ok","service":"jishi-api"}`；公网更新清单哈希 `e0d3993ed51c13f8f6fcfbbe63d42c1e8913e1e72e9a094dc5f4befb8dfa223d` 与 Linux 暂存相同，`releaseId` 为 `web-1eb33d5ff18eb60d`，Windows/Android `githubUrl` 均已上线。部署后 10 分钟 API/Web 的 error 级别 journal 无记录。
 - 自动签名会话仍不能代替实际用户密码登录或真实设备点选 GitHub 下载。根据发布脚本结果，`real_account_check=pending cleanup=pending`；保留本次和此前两份备份及暂存目录，待真实验收通过再执行保留清理。鸿蒙测试 HAP 已签名且本机验签，正式 APP 构建、真机验收、代理提醒重申请和华为应用市场提交尚未完成。
+
+## HarmonyOS 6 真机截图交付（2026-09-18）
+
+- 用户确认有 HarmonyOS 6 真机，要求将安装包放在一个文件夹并说明需要的截图。创建 Git 忽略的 `outputs/harmony/记时-HarmonyOS6-真机测试-20260918/`，仅含签名测试 HAP 与 `请先阅读-安装与截图.md`，另提供同名 ZIP 以便取用；没有证书、私钥、密码或其他签名材料。
+- 复制的 HAP 与独立已签名 HAP SHA-256 相同：`1B1336BD7D9E2A9AA751FC9931D8E9767CF4944C239CC3D0015CC6A041296A28`，480,210 bytes；再次运行 HarmonyOS SDK `verify-app`，release Profile、代码签名和权限签名均通过。ZIP 仅有 HAP 与说明两项。`hdc list targets` 当前为 `[Empty]`，没有连接真机，不能宣称已安装或功能验证。
+- 说明要求真实截取：手机记时应用“创建定期任务”中用户主动开启“定时提醒”并设置具体“提醒时间”；建议补充“创建待办事项”的“截止时间/提示时间”；电脑 AppGallery Connect“应用上架 → 应用信息”中同屏显示“记时”及已保存的“应用 / 效率”分类。不得以源码说明或合成图代替。获得原图后再核对重提代理提醒申请。此测试 HAP 的 Profile 尚无代理提醒授权，正式应用市场 APP 和真机验收仍未完成；本次未修改 Web/Server/Windows/Android 代码、生产服务或更新清单。
