@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   publish:
@@ -21,6 +22,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Locate Windows artifact when too large for Git
+        id: candidate
+        run: |
+          node --input-type=module - <<'NODE' >> "$GITHUB_OUTPUT"
+          import {existsSync,readFileSync} from 'node:fs';
+          const manifest=JSON.parse(readFileSync('releases/current/latest.json','utf8'));
+          const filename=`Jishi-Windows-Setup-${manifest.clients.windows.version}.exe`;
+          const missing=!existsSync(`releases/current/${filename}`);
+          console.log(`missing=${missing}`);
+          if(missing) {
+            const build=JSON.parse(readFileSync('releases/current/build.json','utf8'));
+            if(build.windows.version!==manifest.clients.windows.version||!Number.isSafeInteger(build.windows.runId))throw new Error('Windows build reference missing or invalid');
+            console.log(`run_id=${build.windows.runId}`);
+          }
+          NODE
+      - uses: actions/download-artifact@v4
+        if: steps.candidate.outputs.missing == 'true'
+        with:
+          name: windows-candidate
+          path: releases/current
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.candidate.outputs.run_id }}
       - name: Verify package and manifest contract
         run: node scripts/test-update-contract.mjs
       - name: Publish and verify GitHub Release assets

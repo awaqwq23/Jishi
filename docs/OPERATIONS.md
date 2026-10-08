@@ -16,6 +16,8 @@
 
 单一根 `package-lock.json` 管理所有 npm workspace；在根目录运行 `npm ci`，不再维护重复子端锁文件。所有构建产物只用于待发布验证，发布槽位不保存未完成或未签名的候选包。
 
+超过 GitHub 单文件限制的 Windows 安装包不重复写入 Git：本机和服务器仍保存两代完整交付包，Git 保存版本、SHA-256 和对应构建运行编号；发布 Actions 获取该次经核验的 Windows 产物，检查完整性后上传稳定 Release。安卓必须沿用旧版签名以支持覆盖安装，不得把未签名候选包当成正式更新。
+
 ## 生产目录
 
 代码 `/opt/jishi`；数据库与媒体 `/var/lib/jishi`；公开下载及更新清单 `/var/www/jishi-downloads`；发布暂存 `/opt/jishi-staging`；回退备份 `/var/backups/jishi`。不得清理其他服务目录。

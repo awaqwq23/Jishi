@@ -47,6 +47,7 @@ yarn-error.log*
 /outputs/
 /work/
 /.local/
+/releases/**/*.exe
 /.toolchains/
 **/.data/
 **/.gradle/

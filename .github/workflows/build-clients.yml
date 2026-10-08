@@ -20,6 +20,15 @@ jobs:
       - run: npm audit --audit-level=high
       - run: npm test --workspace @jishi/windows
       - run: npm run build:windows
+      - name: Install and smoke test the Windows candidate
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem '.local/build/windows/Jishi-Windows-Setup-*.exe' | Select-Object -First 1
+          $installDirectory = Join-Path $env:RUNNER_TEMP 'jishi-installed-smoke'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDirectory" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Installer failed' }
+          node scripts/smoke-windows.cjs (Join-Path $installDirectory '记时.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Installed application smoke failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-candidate
