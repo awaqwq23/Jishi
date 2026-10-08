@@ -52,6 +52,7 @@
 - 保留用户现有改动；只暂存任务相关文件，禁止 `git add .`、`git add -A` 和破坏性 Git 命令。
 - Server：至少运行 TypeScript 检查、Wrangler dry-run，并在全新数据库执行完整迁移链。
 - Web：至少运行 lint、生产构建和自动测试。
+- Service Worker 的 activate 事件不能在 waitUntil 中等待被自身接管的页面导航完成；刷新可以发起，但不能形成“导航等待激活、激活等待导航”的循环。改动缓存接管或强制刷新时，必须覆盖导航未完成仍能完成激活的回归测试，并做实际浏览器验收。
 - Windows：运行主机解析/兼容测试；涉及原生壳时构建并冒烟测试安装包。
 - Android：涉及原生壳时构建 APK，验证远程主站、备用站和离线错误页。
 - 运行 `npm audit --audit-level=high`；高危或严重问题不得发布。

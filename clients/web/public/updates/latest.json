@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "required": true,
-  "releaseId": "web-d43a83814045799f",
-  "webBuild": "d43a83814045799f6a572a18f3fc7463e419c62edfcccdf408d2d293661755f5",
-  "publishedAt": "2026-10-08T17:22:30.526Z",
+  "releaseId": "web-19b6c6044a0867a1",
+  "webBuild": "19b6c6044a0867a19a9fdb2cb6e11d73926333d36af4710d30685d60d4b3c7b1",
+  "publishedAt": "2026-10-08T18:20:21.647Z",
   "notes": [
     "新增每日签到与积分奖惩",
     "新增自定义积分商店",
     "Windows 支持关闭窗口后后台提醒与开机恢复",
-    "更新服务器以保存新功能数据"
+    "修复网页缓存接管与强制刷新互相等待"
   ],
   "clients": {
     "windows": {

@@ -39,3 +39,12 @@ Windows 0.4.5 / Android 0.4.6；从现有经核验安装包保留一份。下一
 - 最新干净提交的 Linux 依赖安装、安全审计、26 项测试、生产构建、全新迁移链通过；完整 systemd 限制下的暂存 API/Web 健康检查、已有账号 bootstrap、旧数据数量和新增表通过。Windows/Linux Web 哈希一致，部署脚本 `--preflight` 已通过。
 - 未停服务的在线预检备份：`/var/backups/jishi/previous-20261009-preflight/production.tar.aesgcm`，包含代码、SQLite 只读一致性副本、更新清单、秘密配置和服务/Nginx 配置；SQLite 完整性和加密解密逐字节比对通过。最终停机切换另建 `/var/backups/jishi/previous-20261009-points-shop` 作为准确回滚版本。
 - 华为账号已实际登录核验：发布证书生效至 2029-09-18，应用分类“应用 / 效率”、主标签“日程清单”；分类与应用身份截图保存在忽略的 `.local/signing/harmony/review/`。原代理提醒申请已关闭且拒绝，仅附源码说明不能满足审核截图要求，仍需补齐应用内实际设置提醒的场景截图。
+
+## 2026-10-09 正式切换与实际界面验收
+
+用户明确确认生产切换及验收后清理，并要求代截提醒设置场景。
+
+- 已执行批准的部署命令，停机前完整回滚备份保存为 `/var/backups/jishi/previous-20261009-points-shop/production.tar.aesgcm`，加密解密逐字节校验通过。API/Web/Nginx 恢复 active，公网主页和健康检查为 200，无效登录为 JSON 401。
+- 原有账号有效会话可以读取 bootstrap 与旧待办导出；原数据库各旧表数据数量保留，新增积分规则、流水、签到和商品表存在。旧 Windows 0.4.3/0.4.4 核验请求无新增异常；生产 Nginx 配置哈希保留。
+- 实际截图验收暴露 Service Worker 强制刷新循环等待：activate 的 waitUntil 等待 client.navigate，受控导航又等待 activate 完成。新增阻塞导航回归用例先复现失败，再修复为发起导航但不等待导航结束，缓存代号更新为 v4。Web lint、类型检查、构建、7 项测试与发布契约通过。
+- 本次安装包不再改动；修复后 Web 哈希为 `19b6c6044a0867a19a9fdb2cb6e11d73926333d36af4710d30685d60d4b3c7b1`。这项修复属于本次部署验收，原始完整回滚备份继续保留；完成浏览器场景、新数据写入与公开清单复核前，不执行历史清理。

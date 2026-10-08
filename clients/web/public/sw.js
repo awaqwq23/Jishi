@@ -1,6 +1,6 @@
 const SCOPE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const scoped = (path) => `${SCOPE_PATH}${path}`;
-const CACHE = `jishi-shell-v3:${SCOPE_PATH || "root"}`;
+const CACHE = `jishi-shell-v4:${SCOPE_PATH || "root"}`;
 const SHELL = [scoped("/"), scoped("/manifest.webmanifest"), scoped("/favicon.svg")];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (event) => event.waitUntil((async () => {
@@ -8,7 +8,11 @@ self.addEventListener("activate", (event) => event.waitUntil((async () => {
   await Promise.all(keys.filter((key) => key.startsWith('jishi-shell-') && key !== CACHE).map((key) => caches.delete(key)));
   await self.clients.claim();
   const clients = await self.clients.matchAll({type:'window'});
-  await Promise.all(clients.filter(client => new URL(client.url).pathname.startsWith(`${SCOPE_PATH}/`)).map(client => client.navigate(client.url)));
+  // Controlled navigations can wait for activation; never make activation wait
+  // for those navigations in turn. Existing clients still refresh once.
+  for (const client of clients.filter(client => new URL(client.url).pathname.startsWith(`${SCOPE_PATH}/`))) {
+    void client.navigate(client.url).catch(() => {});
+  }
 })()));
 self.addEventListener("fetch", (event) => {
   const pathname = new URL(event.request.url).pathname;
