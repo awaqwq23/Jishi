@@ -1,6 +1,6 @@
 # 记时 · 多端项目
 
-项目已按“服务器端 / 用户端”完全拆分，每一端都可以独立安装依赖、修改和打包。
+四端源码、API、运维说明和交付物分开存放。依赖统一使用根目录的锁文件。
 
 ```text
 每日记录/
@@ -10,8 +10,11 @@
 │  ├─ windows/         Windows Electron 客户端
 │  ├─ android/         Android Capacitor 客户端
 │  └─ harmony/         HarmonyOS ArkTS 客户端
-├─ Jishi-*.exe/.apk    当前版本客户端安装包
-├─ INSTALL-PACKAGES-SHA256.txt  当前版安装包校验文件
+├─ releases/current/   当前正式安装包、清单与 SHA-256
+├─ releases/previous/  上一代回退安装包与 SHA-256
+├─ docs/               运维说明与最近两代版本记录
+├─ scripts/            可复用的校验、发布和清理工具
+├─ .local/             忽略的本机工具、缓存和私密配置
 ├─ docker-compose.yml  1GB Linux 一键部署
 └─ package.json        总控脚本
 ```
@@ -19,7 +22,7 @@
 ## 开发
 
 ```bash
-npm install
+npm ci
 npm run dev:server
 npm run dev:web
 ```
@@ -36,8 +39,11 @@ Web 客户端通过 `clients/web/.env.local` 的 `NEXT_PUBLIC_API_URL` 连接独
 - HarmonyOS：`.hap`；必须由华为 DevEco/HarmonyOS SDK 编译和签名
 - Server：Linux Docker 部署压缩包
 
-当前版本客户端安装包放在仓库根目录；对应的
-`INSTALL-PACKAGES-SHA256.txt` 可用于检查下载完整性。旧版本发布包不保留在源码仓库中。
+正式交付物只保留 `releases/current` 和 `releases/previous` 两代。各目录的 `SHA256SUMS` 用于检查下载完整性。未完成的构建放入 `.local/build`，不冒充正式版本。
+
+运行 `npm run clean:local` 预览可删除目录；确认用途后用 `npm run clean:local -- -Apply` 清理可重建残留。清理工具核验两代交付包的校验和，拒绝越界路径和链接。
+
+发布与服务器清理流程见 [运维说明](docs/OPERATIONS.md)，当前完成状态见 [版本记录](docs/RELEASES.md)。
 
 > Windows 安装程序目前未做商业代码签名；Android APK 使用标准调试证书签名。HarmonyOS 真机安装包必须使用开发者自己的华为证书，因此仓库不会保存签名凭据。
 

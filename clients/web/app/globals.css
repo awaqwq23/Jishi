@@ -136,3 +136,5 @@ button { cursor: pointer; }
 .points-help { font-size: 13px; line-height: 1.8; opacity: .8; }
 .points-error { color: #b24436; }
 .bottom-nav.module-nav { grid-template-columns: repeat(5, 1fr); }
+
+:root { --font-noto-sans: "Microsoft YaHei", sans-serif; --font-zcool: "SimSun", serif; }

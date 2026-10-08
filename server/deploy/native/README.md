@@ -10,7 +10,7 @@
 - 安装包版本较新时显示下载更新弹窗；按钮使用当前页面同源的 `/downloads/`（兼容根路径和 `/note`），避免备用域名之间跳转失败；弹窗显示百分比、速度和剩余时间。Windows 原生壳使用八路 Range 下载和跨启动断点续传，Android 使用系统 DownloadManager 持久下载；只有 Web 源码更新时显示刷新弹窗。
 - Nginx 为安装包响应添加 `Content-Disposition: attachment`，确保 Electron、Android WebView 和普通浏览器都按文件下载处理。
 - 更新弹窗同时提供 GitHub Release 的对应安装包直链，供服务器下载缓慢时使用。两处安装包须具有相同 SHA-256；下载后由用户按系统提示覆盖安装。Windows/Android 安装包版本更新后先运行 `npm run check:updates`，推送本次提交并等待 `.github/workflows/publish-client-release.yml` 成功，核对 Release 资产，再启用新的生产清单。只改 Web/Server 时沿用现有 Release。
-- `jishi-web.service` 每次成功启动后执行 `mark-deployment.sh`。脚本按已部署的 Web 源码计算稳定哈希；源码没有变化的普通重启不会重复提示。
+- `jishi-web.service` 使用 `/usr/local/bin/node` 启动静态 Web 服务。`mark-deployment.sh` 只核验已部署源码与已批准清单的稳定哈希，不擅自改写清单或生成版本。
 
 人工验收时可访问 `/?client=windows&version=0.3.1` 或 `/?client=android&version=0.3.1` 模拟旧客户端。该参数只影响页面端版本识别，不会修改账号或服务端数据。
 
@@ -18,7 +18,7 @@
 
 1. 同步修改客户端版本号；Android 的 `versionCode` 必须递增。
 2. 运行完整检查并构建 Windows、Android 安装包。
-3. 将新安装包复制到仓库根目录，名称必须为：
+3. 将经签名和校验的新安装包放入 `releases/current`，原当前包放入 `releases/previous`，名称必须为：
    - `Jishi-Windows-Setup-<version>.exe`
    - `Jishi-Android-<version>.apk`
 4. 生成版本清单：
@@ -34,7 +34,7 @@
    sudo /opt/jishi/server/deploy/native/install-release.sh latest.json Jishi-Windows-Setup-<version>.exe Jishi-Android-<version>.apk
    ```
 
-6. 部署 Web/Server 源码，运行 `npm ci`、`npm run build`，验证 workspace 提升后的根目录 `node_modules/.bin/wrangler` 和 `node_modules/.bin/vinext` 可执行，再安装本目录的 systemd 配置并重启 `jishi-api`、`jishi-web`。
+6. 先在独立暂存目录运行依赖安装、构建、测试、迁移、审计和更新契约；核验根目录 `node_modules/.bin/wrangler`、`/usr/local/bin/node` 和 `clients/web/server.mjs`。使用本目录通用 `deploy.sh --preflight` 检查，再展示准确 `--apply` 命令并取得本次明确确认。
 7. 普通发布保留生产 `/etc/nginx/sites-available/jishi`，因为其中包含 Certbot 管理的 443 回源配置；不要用仓库初始化模板覆盖。只有明确修改 Nginx 时才合并生产专用段，执行 `nginx -t` 后重载。
 
 首次启用 `jishi.awaqwq233.com` 时，把 `nginx-jishi-subdomain.conf` 安装为新的独立站点并启用；DNS 生效后再让 Certbot 为该站点添加 HTTPS。不要用它替换现有 `jishi` 或根域名站点。
@@ -50,3 +50,5 @@ systemctl is-active jishi-api jishi-web nginx
 ```
 
 回滚时恢复上一版 `/opt/jishi` 源码和 systemd/Nginx 配置并重启服务。版本化安装包不会相互覆盖，可将 `latest.json` 恢复为上一版清单。
+
+完整发布、回退和清理约束见 [运维说明](../../../docs/OPERATIONS.md)。`inventory.sh` 只读盘点；`cleanup.sh` 仅在本次部署、真实账号及设备验收全部通过后执行。只保留一份完整上一版本备份，生产数据库、媒体和秘密配置始终保留。

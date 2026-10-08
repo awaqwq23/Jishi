@@ -1,8 +1,8 @@
 services:
   server:
     build:
-      context: ./server
-      dockerfile: deploy/selfhost/Dockerfile
+      context: .
+      dockerfile: server/deploy/selfhost/Dockerfile
     restart: unless-stopped
     volumes:
       - jishi_data:/data
@@ -13,10 +13,11 @@ services:
     cpus: 0.7
   web:
     build:
-      context: ./clients/web
+      context: .
+      dockerfile: clients/web/Dockerfile
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: ""
+      API_UPSTREAM: http://server:8787
     mem_limit: 300m
     cpus: 0.7
   gateway:

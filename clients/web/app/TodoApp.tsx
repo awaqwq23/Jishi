@@ -6,7 +6,7 @@ import {
   Palette, Pencil, Plus, RotateCcw, Save, Search, Settings, SlidersHorizontal,
   Sparkles, Trash2, Upload, UserRound, X,
 } from "lucide-react";
-import Image from "next/image";
+import Image from "./Image";
 import PointsBoard, { type PointsData } from "./PointsBoard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, withRuntimeBase } from "./runtime-path";
@@ -320,7 +320,7 @@ function ImageCropper({ file, kind, onCancel, onConfirm }: {
       <div className="crop-scroll">
         <div className={`crop-viewport ${kind} ${dragging ? "dragging" : ""}`} onPointerDown={beginImageMove} onPointerMove={moveImage} onPointerUp={endImageMove} onPointerCancel={endImageMove} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(1, Math.min(4, value * (event.deltaY < 0 ? 1.08 : .92)))); }}>
           {/* Local object URLs must stay unoptimized so cropping uses the original pixels. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+
           {source && <img ref={imageRef} src={source} alt="待裁选图片" style={{ width: `${previewGeometry.width}%`, height: `${previewGeometry.height}%`, left: `${previewGeometry.left}%`, top: `${previewGeometry.top}%` }} onLoad={(event) => setDimensions({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />}
           <span className="crop-grid" aria-hidden="true" />
         </div>

@@ -2,7 +2,12 @@
   "name": "jishi-multi-platform",
   "version": "0.2.0",
   "private": true,
-  "workspaces": ["server", "clients/web", "clients/windows", "clients/android"],
+  "workspaces": [
+    "server",
+    "clients/web",
+    "clients/windows",
+    "clients/android"
+  ],
   "scripts": {
     "install:all": "npm install --workspaces",
     "dev:web": "npm run dev --workspace @jishi/web",
@@ -13,10 +18,21 @@
     "build:harmony": "powershell -ExecutionPolicy Bypass -File clients/harmony/build-hap.ps1",
     "release:manifest": "node scripts/generate-update-manifest.mjs",
     "check:updates": "node scripts/test-update-contract.mjs",
-    "check": "npm test --workspace @jishi/server && npm run lint --workspace @jishi/web && npm test --workspace @jishi/web && npm test --workspace @jishi/windows && node --test scripts/backup-crypto.test.mjs && npm run check:updates"
+    "check": "npm test --workspace @jishi/server && npm run lint --workspace @jishi/web && npm test --workspace @jishi/web && npm test --workspace @jishi/windows && node --test scripts/backup-crypto.test.mjs scripts/release-layout.test.mjs && npm run check:updates",
+    "clean:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-local.ps1",
+    "check:release-layout": "node --test scripts/release-layout.test.mjs"
   },
   "overrides": {
-    "sharp": "0.35.4",
-    "js-yaml": "4.3.2"
+    "sharp": "$sharp",
+    "js-yaml": "4.3.2",
+    "miniflare@5.20261006.0-alpha": {
+      "sharp": "$sharp"
+    }
+  },
+  "dependencies": {
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "miniflare": "5.20261006.0-alpha"
   }
 }

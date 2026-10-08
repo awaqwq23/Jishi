@@ -18,7 +18,7 @@
     "appId": "cn.jishi.todo",
     "productName": "记时",
     "directories": {
-      "output": "dist"
+      "output": "../../.local/build/windows"
     },
     "files": [
       "main.cjs",

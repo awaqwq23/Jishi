@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $projectRoot)
-if (!$OutputDirectory) { $OutputDirectory = Join-Path $repoRoot 'work/harmony-signing' }
+if (!$OutputDirectory) { $OutputDirectory = Join-Path $repoRoot '.local/signing/harmony' }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 
 $keytoolCandidates = @(

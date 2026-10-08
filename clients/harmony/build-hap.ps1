@@ -29,7 +29,7 @@ if ($SigningProfilePath) {
 $hvigorCandidates = @(
   $HvigorPath,
   (Join-Path $projectRoot 'hvigorw.bat'),
-  (Join-Path $repoRoot 'work/harmony-tools/node_modules/@ohos/hvigor/bin/hvigor.js'),
+  (Join-Path $repoRoot '.local/toolchains/harmony/node_modules/@ohos/hvigor/bin/hvigor.js'),
   (Get-Command hvigorw.bat -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
   (Get-Command hvigorw -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
 ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
@@ -113,7 +113,7 @@ try {
     }
   }
 
-  $destination = Join-Path $repoRoot ('outputs/harmony/' + (Split-Path -Leaf $stage))
+  $destination = Join-Path $repoRoot ('.local/build/harmony/' + (Split-Path -Leaf $stage))
   New-Item -ItemType Directory -Path $destination -Force | Out-Null
   foreach ($output in $outputs) {
     $target = Join-Path $destination $output.Name

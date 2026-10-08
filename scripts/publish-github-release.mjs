@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { root, currentDirectory } from "./release-layout.mjs";
 const repo = "awaqwq23/Jishi";
 const manifest = JSON.parse(await readFile(join(root, "clients/web/public/updates/latest.json"), "utf8"));
 const tag = `clients-v${manifest.clients.windows.version}-a${manifest.clients.android.version}`;
@@ -39,7 +38,7 @@ const artifacts = [];
 for (const platform of ["windows", "android"]) {
   const release = manifest.clients[platform];
   const name = platform === "windows" ? `Jishi-Windows-Setup-${release.version}.exe` : `Jishi-Android-${release.version}.apk`;
-  const bytes = await readFile(join(root, name));
+  const bytes = await readFile(join(currentDirectory, name));
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   if (bytes.length !== release.size || sha256.toUpperCase() !== release.sha256.toUpperCase()) {
     throw new Error(`${name} differs from update manifest`);

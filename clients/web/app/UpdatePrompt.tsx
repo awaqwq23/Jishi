@@ -6,7 +6,7 @@ import { withRuntimeBase } from "./runtime-path";
 
 type NativePlatform = "windows" | "android";
 type ClientRelease = { version: string; downloadUrl: string; githubUrl?: string; sha256: string; size: number; required?: boolean };
-type UpdateManifest = { schemaVersion: 1; releaseId: string; publishedAt: string; notes: string[]; clients: Record<NativePlatform, ClientRelease> };
+type UpdateManifest = { schemaVersion: 1; releaseId: string; webBuild?: string; required?: boolean; publishedAt: string; notes: string[]; clients: Record<NativePlatform, ClientRelease> };
 type ClientIdentity = { platform: NativePlatform | "web"; version: string | null };
 type PromptState = { kind: "binary" | "content"; identity: ClientIdentity; manifest: UpdateManifest; release?: ClientRelease };
 type DownloadStatus = "idle" | "starting" | "downloading" | "background" | "paused" | "verifying" | "completed" | "failed";
@@ -31,14 +31,14 @@ function detectClient(): ClientIdentity | null {
     return { platform: requestedPlatform, version: requestedVersion };
   }
   const agent = navigator.userAgent;
+  if (/JishiHarmony\//i.test(agent)) return { platform: 'web', version: null };
   const windows = agent.match(/JishiWindows\/([0-9]+(?:\.[0-9]+){1,3})/i);
   if (windows) return { platform: "windows", version: windows[1] };
   const android = agent.match(/JishiAndroid\/([0-9]+(?:\.[0-9]+){1,3})/i);
   if (android) return { platform: "android", version: android[1] };
   if (/Electron\//i.test(agent) && /Windows/i.test(agent)) return { platform: "windows", version: "0.3.1" };
   if (/Android/i.test(agent) && /\bwv\b/i.test(agent)) return { platform: "android", version: "0.3.1" };
-  const standalone = window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
-  return standalone ? { platform: "web", version: null } : null;
+  return { platform: "web", version: null };
 }
 
 function compareVersions(left: string, right: string) {
@@ -151,6 +151,7 @@ export default function UpdatePrompt() {
         setPrompt({ kind: "binary", identity, manifest, release });
         return;
       }
+      if (manifest.webBuild === __JISHI_WEB_BUILD__) { localStorage.setItem(seenKey, manifest.releaseId); return; }
       if (!seenRelease) { localStorage.setItem(seenKey, manifest.releaseId); return; }
       if (seenRelease !== manifest.releaseId) setPrompt({ kind: "content", identity, manifest });
     } catch { /* Update checks must never interrupt the user's todo workflow. */ }
@@ -165,6 +166,7 @@ export default function UpdatePrompt() {
   }, [checkForUpdates]);
 
   if (!prompt) return null;
+  const required = prompt.kind === 'binary' ? prompt.release?.required === true : prompt.manifest.required === true;
   const markSeen = () => localStorage.setItem(storageKey(prompt.identity, "seen"), prompt.manifest.releaseId);
   const later = () => {
     markSeen();
@@ -202,7 +204,7 @@ export default function UpdatePrompt() {
     }
     if (received !== total) throw new Error("安装包未完整下载");
     setDownloadState({ status: "verifying", receivedBytes: received, totalBytes: total, bytesPerSecond: speed, percent: 100, etaSeconds: 0, filename, message: "下载完成，正在校验安装包" });
-    const blob = new Blob(chunks, { type: response.headers.get("content-type") || "application/octet-stream" });
+    const blob = new Blob(chunks.map(chunk => Uint8Array.from(chunk).buffer), { type: response.headers.get("content-type") || "application/octet-stream" });
     const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
     const sha256 = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("").toUpperCase();
     if (sha256 !== release.sha256.toUpperCase()) throw new Error("安装包校验失败，请重新下载");
@@ -245,7 +247,7 @@ export default function UpdatePrompt() {
   const githubUrl = prompt.release ? trustedGithubUrl(prompt.release, prompt.manifest) : null;
   return <div className="update-layer" role="presentation">
     <section className="update-card" role="dialog" aria-modal="true" aria-labelledby="update-title">
-      {!prompt.release?.required && !busy && <button className="update-close" onClick={later} aria-label="稍后更新"><X size={19} /></button>}
+      {!required && !busy && <button className="update-close" onClick={later} aria-label="稍后更新"><X size={19} /></button>}
       <div className="update-icon">{done ? <Check size={25} /> : prompt.kind === "binary" ? <Download size={25} /> : <RefreshCw size={25} />}</div>
       <span className="eyebrow">{prompt.kind === "binary" ? `${platformName} 客户端更新` : "应用内容已更新"}</span>
       <h2 id="update-title">{prompt.kind === "binary" ? done ? "安装包下载完成" : `新版本 ${prompt.release?.version} 已就绪` : "刷新后即可使用最新功能"}</h2>
@@ -259,7 +261,7 @@ export default function UpdatePrompt() {
       {prompt.manifest.notes.length > 0 && <ul>{prompt.manifest.notes.slice(0, 4).map((note) => <li key={note}>{note}</li>)}</ul>}
       <div className="update-trust"><ShieldCheck size={16} /><span>安装包通过 HTTPS 下载；新版客户端完成后自动校验 SHA-256</span></div>
       <div className="update-actions">
-        {!prompt.release?.required && !busy && !done && <button className="button secondary" onClick={later}>稍后提醒</button>}
+        {!required && !busy && !done && <button className="button secondary" onClick={later}>稍后提醒</button>}
         {prompt.kind === "binary" && githubUrl && !done && <a className="button secondary" href={githubUrl} target={prompt.identity.platform === "windows" ? "_blank" : undefined} rel="noopener noreferrer"><ExternalLink size={17} />从 GitHub 下载</a>}
         {prompt.kind === "binary"
           ? <button className="button primary" disabled={busy || done || downloadState?.status === "background"} onClick={() => void download()}><Download size={17} />{busy ? "下载中…" : done ? "已保存" : downloadState?.status === "paused" || downloadState?.status === "failed" ? "继续下载" : "下载更新"}</button>

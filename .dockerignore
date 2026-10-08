@@ -6,6 +6,15 @@
 **/*.pfx
 **/*.key
 **/*.pem
+**/*.csr
+**/*.cer
+**/*.p7b
+**/signing.local.json5
 work
 outputs
 .toolchains
+.local
+node_modules
+**/node_modules
+**/dist
+releases

@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile, stat, writeFile, mkdir } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { basename, join, relative } from "node:path";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+import { root, currentDirectory, webBuildHash } from "./release-layout.mjs";
 const publicUrl = (process.env.JISHI_PUBLIC_URL || "https://awaqwq233.com/note").replace(/\/$/, "");
 const githubRepo = "awaqwq23/Jishi";
-const required = process.env.JISHI_UPDATE_REQUIRED === "true";
+const required = process.env.JISHI_UPDATE_REQUIRED !== "false";
 const notesArgument = process.argv.find((argument) => argument.startsWith("--notes="))?.slice(8);
 const notes = (notesArgument || process.env.JISHI_RELEASE_NOTES || "修复问题并改进使用体验。")
   .split("|").map((note) => note.trim()).filter(Boolean);
@@ -27,49 +26,16 @@ async function fileRelease(platform, version, path, githubTag) {
   };
 }
 
-const textExtensions = new Set([".css", ".js", ".json", ".svg", ".ts", ".tsx", ".webmanifest"]);
-
-function stableWebBytes(path, bytes) {
-  return textExtensions.has(extname(path).toLowerCase())
-    ? Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8")
-    : bytes;
-}
-
-async function webBuildHash(webRoot) {
-  const files = [];
-  async function walk(directory) {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const fullPath = join(directory, entry.name);
-      if (entry.isDirectory()) await walk(fullPath);
-      else if (entry.isFile() && relative(webRoot, fullPath).replaceAll("\\", "/") !== "public/updates/latest.json") files.push(fullPath);
-    }
-  }
-  await walk(join(webRoot, "app"));
-  await walk(join(webRoot, "public"));
-  for (const name of ["package.json", "package-lock.json", "vite.config.ts", "next.config.ts"]) {
-    const fullPath = join(webRoot, name);
-    if ((await stat(fullPath)).isFile()) files.push(fullPath);
-  }
-  const hash = createHash("sha256");
-  for (const file of files.sort()) {
-    hash.update(relative(webRoot, file).replaceAll("\\", "/"));
-    hash.update("\0");
-    const bytes = await readFile(file);
-    hash.update(stableWebBytes(file, bytes));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
-
 const windowsPackage = await json(join(root, "clients/windows/package.json"));
 const androidPackage = await json(join(root, "clients/android/package.json"));
-const windowsPath = join(root, `Jishi-Windows-Setup-${windowsPackage.version}.exe`);
-const androidPath = join(root, `Jishi-Android-${androidPackage.version}.apk`);
+const windowsPath = join(currentDirectory, `Jishi-Windows-Setup-${windowsPackage.version}.exe`);
+const androidPath = join(currentDirectory, `Jishi-Android-${androidPackage.version}.apk`);
 const githubTag = `clients-v${windowsPackage.version}-a${androidPackage.version}`;
 const webRoot = join(root, "clients/web");
 const webBuild = await webBuildHash(webRoot);
 const manifest = {
   schemaVersion: 1,
+  required,
   releaseId: `web-${webBuild.slice(0, 16)}`,
   webBuild,
   publishedAt: new Date().toISOString(),
@@ -82,4 +48,6 @@ const manifest = {
 const output = join(webRoot, "public/updates/latest.json");
 await mkdir(dirname(output), { recursive: true });
 await writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`);
+await writeFile(join(currentDirectory, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+await writeFile(join(currentDirectory, "SHA256SUMS"), Object.values(manifest.clients).map(release => `${release.sha256} *${basename(new URL(release.downloadUrl).pathname)}`).join("\n")+"\n");
 console.log(`Generated ${relative(root, output)} for ${windowsPackage.version} / ${androidPackage.version}`);

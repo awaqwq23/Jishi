@@ -1,5 +1,0 @@
-CREATE TABLE IF NOT EXISTS point_rules (user_id TEXT PRIMARY KEY, signin_reward INTEGER NOT NULL DEFAULT 5, signin_penalty INTEGER NOT NULL DEFAULT 0, task_reward INTEGER NOT NULL DEFAULT 10, task_penalty INTEGER NOT NULL DEFAULT 0, habit_reward INTEGER NOT NULL DEFAULT 5, habit_penalty INTEGER NOT NULL DEFAULT 0, started_at TEXT NOT NULL, settled_date TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS point_ledger (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, event_key TEXT NOT NULL, amount INTEGER NOT NULL, units INTEGER NOT NULL, label TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(user_id,event_key));
-CREATE INDEX IF NOT EXISTS idx_point_ledger_user ON point_ledger(user_id,created_at);
-CREATE TABLE IF NOT EXISTS daily_checkins (user_id TEXT NOT NULL, checkin_date TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(user_id,checkin_date));
-CREATE TABLE IF NOT EXISTS shop_products (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, cost INTEGER NOT NULL CHECK(cost>0), created_at TEXT NOT NULL);

@@ -1,9 +1,15 @@
 const SCOPE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const scoped = (path) => `${SCOPE_PATH}${path}`;
-const CACHE = `jishi-shell-v2:${SCOPE_PATH || "root"}`;
+const CACHE = `jishi-shell-v3:${SCOPE_PATH || "root"}`;
 const SHELL = [scoped("/"), scoped("/manifest.webmanifest"), scoped("/favicon.svg")];
-self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL))));
-self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))));
+self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())));
+self.addEventListener("activate", (event) => event.waitUntil((async () => {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter((key) => key.startsWith('jishi-shell-') && key !== CACHE).map((key) => caches.delete(key)));
+  await self.clients.claim();
+  const clients = await self.clients.matchAll({type:'window'});
+  await Promise.all(clients.filter(client => new URL(client.url).pathname.startsWith(`${SCOPE_PATH}/`)).map(client => client.navigate(client.url)));
+})()));
 self.addEventListener("fetch", (event) => {
   const pathname = new URL(event.request.url).pathname;
   const relativePath = SCOPE_PATH && pathname.startsWith(`${SCOPE_PATH}/`) ? pathname.slice(SCOPE_PATH.length) : pathname;

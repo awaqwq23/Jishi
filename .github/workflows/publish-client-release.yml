@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - Jishi-Windows-Setup-*.exe
-      - Jishi-Android-*.apk
+      - releases/current/**
       - clients/web/public/updates/latest.json
       - scripts/publish-github-release.mjs
       - .github/workflows/publish-client-release.yml

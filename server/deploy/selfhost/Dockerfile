@@ -1,8 +1,8 @@
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install --ignore-scripts --no-audit --no-fund
 COPY . .
-RUN chmod +x /app/deploy/selfhost/start.sh
+RUN npm ci --workspace @jishi/server --include-workspace-root --ignore-scripts --no-audit --no-fund
+RUN chmod +x /app/server/deploy/selfhost/start.sh
+WORKDIR /app/server
 EXPOSE 8787
-CMD ["/app/deploy/selfhost/start.sh"]
+CMD ["/app/server/deploy/selfhost/start.sh"]

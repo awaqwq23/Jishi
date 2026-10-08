@@ -18,6 +18,7 @@ buildscript {
 apply from: "variables.gradle"
 
 allprojects {
+    layout.buildDirectory.set(file("${rootProject.projectDir}/../../../.local/build/android/${project.name}"))
     repositories {
         google()
         mavenCentral()
