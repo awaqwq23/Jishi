@@ -34,3 +34,8 @@ Windows 0.4.5 / Android 0.4.6；从现有经核验安装包保留一份。下一
 - 新增服务器磁盘持久化与运行器重启测试：自定义积分规则、签到记录、商品、兑换流水和余额完整恢复，重复签到、兑换继续幂等。Server 9 项、Web 6 项、Windows 9 项与发布哈希/备份加密 2 项测试，以及类型检查、lint、构建、dry-run、`check:updates` 全部通过；审计无高危/严重问题，8 项中危。
 - 本地鸿蒙发布 Profile 的包名为 `cn.jishi.todo`，实际未授予 `ohos.permission.PUBLISH_AGENT_REMINDER`。用户提供的拒绝邮件要求真实提醒设置场景截图与应用市场分类截图。华为账号登录页已打开，等待用户登录以检查并补交资料；不得将已有证书当作提醒权限已获批。
 - 准备发布仍不代表生产已切换。生产最终确认、已有账号和真实设备验收及上线后历史清理在完成后补记。
+- 发布准备提交 `7babff0151868d49ec7c6d7780f85213cb96cbe2` 已推送。[公开 Release](https://github.com/awaqwq23/Jishi/releases/tag/clients-v0.4.7-a0.4.7) 的 Windows 新包与留用 Android 包均核对大小、下载链接和 GitHub SHA-256；[自动发布校验](https://github.com/awaqwq23/Jishi/actions/runs/37816852373) 成功。
+- 本机已从 0.4.6 覆盖安装到 0.4.7，系统安装记录与隔离的实际应用启动验证通过。整理时占用旧包的是旧 0.4.6 安装窗口；窗口关闭后重复文件已删除，当前与上一代交付目录各只保留对应正式包。
+- 最新干净提交的 Linux 依赖安装、安全审计、26 项测试、生产构建、全新迁移链通过；完整 systemd 限制下的暂存 API/Web 健康检查、已有账号 bootstrap、旧数据数量和新增表通过。Windows/Linux Web 哈希一致，部署脚本 `--preflight` 已通过。
+- 未停服务的在线预检备份：`/var/backups/jishi/previous-20261009-preflight/production.tar.aesgcm`，包含代码、SQLite 只读一致性副本、更新清单、秘密配置和服务/Nginx 配置；SQLite 完整性和加密解密逐字节比对通过。最终停机切换另建 `/var/backups/jishi/previous-20261009-points-shop` 作为准确回滚版本。
+- 华为账号已实际登录核验：发布证书生效至 2029-09-18，应用分类“应用 / 效率”、主标签“日程清单”；分类与应用身份截图保存在忽略的 `.local/signing/harmony/review/`。原代理提醒申请已关闭且拒绝，仅附源码说明不能满足审核截图要求，仍需补齐应用内实际设置提醒的场景截图。

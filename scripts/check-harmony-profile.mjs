@@ -4,7 +4,7 @@ import {resolve} from 'node:path';
 
 // Print only release identity/permissions; never dump the signed profile or key.
 const directory=resolve(process.argv[2] || '.local/signing/harmony');
-const certificate=new X509Certificate(await readFile(resolve(directory,'jishi-harmony-release.cer')));
+let certificate=new X509Certificate(await readFile(resolve(directory,'jishi-harmony-release.cer')));
 const bytes=await readFile(resolve(directory,'jishi-harmony-release.p7b'));
 const profiles=[];
 function walk(start,end) {
@@ -28,6 +28,8 @@ walk(0,bytes.length);
 const profile=profiles.find(value=>value['bundle-info']);if(!profile)throw new Error('Release profile metadata unavailable');
 const identity=profile['bundle-info'];
 if(identity['bundle-name']!=='cn.jishi.todo')throw new Error('Profile belongs to another application');
+const leaf=identity['distribution-certificate'] || identity['development-certificate'];
+if(leaf) certificate=new X509Certificate(leaf);
 const permissions=profile.acls?.['allowed-acls'] || [];
-console.log(JSON.stringify({bundleName:identity['bundle-name'],type:profile.type,certificateExpires:certificate.validTo,agentReminderGranted:permissions.includes('ohos.permission.PUBLISH_AGENT_REMINDER')},null,2));
+console.log(JSON.stringify({bundleName:identity['bundle-name'],type:profile.type,certificateExpires:certificate.ca?undefined:certificate.validTo,agentReminderGranted:permissions.includes('ohos.permission.PUBLISH_AGENT_REMINDER')},null,2));
 if(!permissions.includes('ohos.permission.PUBLISH_AGENT_REMINDER'))process.exitCode=2;
