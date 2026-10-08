@@ -1,0 +1,12 @@
+{
+  "windows": {
+    "version": "0.4.7",
+    "runId": 37734494571,
+    "commit": "5b70690e5340846429421ef576dab78895f13a07",
+    "artifact": "windows-candidate"
+  },
+  "android": {
+    "version": "0.4.7",
+    "retained": true
+  }
+}

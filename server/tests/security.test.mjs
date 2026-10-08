@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import {mkdtemp,realpath,rm,lstat} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,sep} from 'node:path';
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from "miniflare";
 
 let runtime, db, alice, bob;
@@ -29,6 +32,34 @@ before(async () => {
   alice = await account("Alice"); bob = await account("Bob");
 });
 after(async () => { await runtime?.dispose(); });
+
+test('check-in, custom rules, shop and redeemed balance survive a server restart', async () => {
+  const folder=await mkdtemp(join(tmpdir(),'jishi-persistence-'));
+  const options=convertV4MiniflareOptions({modules:true,scriptPath:fileURLToPath(new URL('../.wrangler/dry-run/index.js',import.meta.url)),compatibilityDate:'2026-05-22',d1Databases:['DB'],resourcePersistencePath:folder,r2Buckets:['MEDIA'],bindings:{AUTH_SECRET:secret,ALLOWED_ORIGINS:origin},log:new Log(LogLevel.NONE)});
+  let instance=new Miniflare(options);
+  let cookie;
+  const request=async(path,method='GET',body)=>json(await instance.dispatchFetch(origin+path,{method,headers:{...(cookie?{Cookie:cookie}:{}),'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),200);
+  try {
+    const response=await instance.dispatchFetch(origin+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:`persist-${randomUUID()}@example.test`,password:randomUUID(),name:'Persistence'})});
+    await json(response,201);cookie=response.headers.get('set-cookie').split(';')[0];
+    const rules={signinReward:9,signinPenalty:2,taskReward:10,taskPenalty:3,habitReward:7,habitPenalty:4};
+    await request('/api/points/rules','PUT',rules);
+    await request('/api/points/checkin','POST',{});
+    const shop=await request('/api/shop/products','POST',{name:'Saved reward',cost:4});
+    const productId=shop.products[0].id,requestId=randomUUID();
+    const before=await request('/api/shop/redeem','POST',{productId,requestId});assert.equal(before.balance,5);
+    await instance.dispose();instance=new Miniflare(options);
+    const restored=await request('/api/points');
+    assert.deepEqual(restored,before);
+    assert.equal((await request('/api/shop/redeem','POST',{productId,requestId})).balance,5);
+    assert.equal((await request('/api/points/checkin','POST',{})).balance,5);
+    await request('/api/bootstrap');
+  } finally {
+    await instance.dispose();
+    assert.ok((await realpath(folder)).startsWith((await realpath(tmpdir()))+sep));assert.ok(!(await lstat(folder)).isSymbolicLink());
+    await rm(folder,{recursive:true,force:true});
+  }
+});
 
 test('points check-in, completion reversal and atomic redemption contracts', async () => {
   const owner=await account('Points'); const cookie=owner.cookie;

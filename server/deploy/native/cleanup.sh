@@ -35,9 +35,11 @@ from pathlib import Path
 target=Path('/var/www/jishi-downloads');marker=target/'.retained-installers.json'
 assert target.is_dir() and not target.is_symlink() and marker.is_file() and not marker.is_symlink()
 keep=set(json.loads(marker.read_text()))
-assert len(keep)==4
+assert 3<=len(keep)<=4
 pattern=re.compile(r'(?:Jishi-Windows-Setup-\d+\.\d+\.\d+\.exe|Jishi-Android-\d+\.\d+\.\d+\.apk)')
 assert all(isinstance(name,str) and pattern.fullmatch(name) for name in keep)
+assert len([name for name in keep if name.endswith('.exe')])==2
+assert 1<=len([name for name in keep if name.endswith('.apk')])<=2
 for slot in ('current','previous'):
     directory=Path('/opt/jishi/releases')/slot
     sums=directory/'SHA256SUMS'

@@ -2,7 +2,7 @@ name: Publish client packages to GitHub
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/reminders-points-shop]
     paths:
       - releases/current/**
       - clients/web/public/updates/latest.json

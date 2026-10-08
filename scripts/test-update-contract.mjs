@@ -20,7 +20,7 @@ const versions = {
   windows: JSON.parse(windowsPackageText).version,
   android: JSON.parse(androidPackageText).version,
 };
-const githubTag = `clients-v${versions.windows}-a${versions.android}`;
+const githubTag = `clients-v${manifest.clients.windows.version}-a${manifest.clients.android.version}`;
 
 assert.equal(manifest.schemaVersion, 1);
 assert.match(manifest.releaseId, /^web-[a-f0-9]{16}$/);
@@ -32,7 +32,13 @@ assert.equal(manifest.releaseId, `web-${manifest.webBuild.slice(0, 16)}`);
 
 for (const platform of ["windows", "android"]) {
   const release = manifest.clients[platform];
-  assert.equal(release.version, versions[platform]);
+  if (platform === 'android' && release.retained === true) {
+    assert.equal(release.sourceVersion, versions.android);
+    const priorManifest = JSON.parse(await readFile(join(previousDirectory, 'latest.json'), 'utf8'));
+    assert.equal(release.version, priorManifest.clients.android.version);
+    assert.equal(release.sha256, priorManifest.clients.android.sha256);
+    assert.equal(release.size, priorManifest.clients.android.size);
+  } else assert.equal(release.version, versions[platform]);
   const expectedName = platform === "windows" ? `Jishi-Windows-Setup-${release.version}.exe` : `Jishi-Android-${release.version}.apk`;
   assert.equal(new URL(release.downloadUrl).pathname.split("/").at(-1), expectedName);
   assert.equal(release.githubUrl, `https://github.com/awaqwq23/Jishi/releases/download/${githubTag}/${expectedName}`);
