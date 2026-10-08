@@ -1,4 +1,5 @@
 import { ApiError, allowedOrigins, checkRequestOrigin, limitAuth, readBytes, readJson, sameSecret, trustedGateway } from "./security";
+import { pointsSchema, pointsAction, pointsState, settlePoints } from "./points";
 
 export interface Env {
   DB: D1Database;
@@ -13,6 +14,7 @@ type User = { id: string; email: string; name: string };
 type Json = Record<string, unknown>;
 
 const schema = [
+  ...pointsSchema,
   `CREATE TABLE IF NOT EXISTS auth_rate_limits (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_expiry ON auth_rate_limits(expires_at)`,
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, avatar_url TEXT, settings_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
@@ -168,6 +170,7 @@ async function ensureDb(env: Env) {
 async function prepareUser(env: Env, user: User) {
   await ensureDb(env);
   const now = new Date().toISOString();
+  await settlePoints(env.DB, user.id);
   await env.DB.prepare(`INSERT INTO users (id,email,name,created_at,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,updated_at=excluded.updated_at`).bind(user.id, user.email, user.name, now, now).run();
   const categoryCount = await env.DB.prepare("SELECT COUNT(*) count FROM categories WHERE user_id=?").bind(user.id).first<{ count: number }>();
   if (!categoryCount?.count) {
@@ -231,6 +234,7 @@ async function bootstrap(request: Request, env: Env, user: User) {
     schedules: schedules.results.map(scheduleItem),
     scheduleRecords: scheduleRecords.results.map(scheduleRecord),
     diaryEntries: diaryEntries.results.map(diaryEntry),
+    points: await pointsState(env.DB, user.id),
   });
 }
 
@@ -270,7 +274,7 @@ async function updateTodo(request: Request, env: Env, user: User, id: string) {
   const preset = presetId ? await env.DB.prepare("SELECT offsets_json FROM reminder_presets WHERE id=? AND user_id=?").bind(presetId, user.id).first<{ offsets_json: string }>() : null;
   await env.DB.prepare("UPDATE todos SET title=?,content=?,deadline=?,reminder_preset_id=?,reminder_offsets_json=?,category_id=?,priority=?,notes=?,status=?,completed_at=?,deleted_at=?,updated_at=? WHERE id=? AND user_id=?").bind(title, pick("content", "content") || "", pick("deadline", "deadline") || null, presetId || null, preset?.offsets_json || "[]", pick("categoryId", "category_id") || null, pick("priority", "priority") || "normal", pick("notes", "notes") || "", status, completedAt, deletedAt, now, id, user.id).run();
   const row = await env.DB.prepare("SELECT * FROM todos WHERE id=?").bind(id).first<Json>();
-  return response(request, env, { todo: todo(row || {}) });
+  return response(request, env, { todo: todo(row || {}), points: await pointsState(env.DB, user.id) });
 }
 
 async function categories(request: Request, env: Env, user: User) {
@@ -384,13 +388,13 @@ async function scheduleCompletion(request: Request, env: Env, user: User, id: st
   if (!item) return response(request, env, { error: "计划不存在或已在回收站" }, 404);
   if (!completed) {
     await env.DB.prepare("DELETE FROM schedule_records WHERE item_id=? AND user_id=? AND occurrence_date=?").bind(id, user.id, occurrenceDate).run();
-    return response(request, env, { record: null });
+    return response(request, env, { record: null, points: await pointsState(env.DB, user.id) });
   }
   const now = new Date().toISOString(); const recordId = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO schedule_records (id,user_id,item_id,occurrence_date,completed_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id,item_id,occurrence_date) DO UPDATE SET completed_at=excluded.completed_at")
     .bind(recordId, user.id, id, occurrenceDate, now).run();
   const row = await env.DB.prepare("SELECT * FROM schedule_records WHERE user_id=? AND item_id=? AND occurrence_date=?").bind(user.id, id, occurrenceDate).first<Json>();
-  return response(request, env, { record: scheduleRecord(row || {}) });
+  return response(request, env, { record: scheduleRecord(row || {}), points: await pointsState(env.DB, user.id) });
 }
 
 async function diary(request: Request, env: Env, user: User, entryDate: string) {
@@ -526,6 +530,7 @@ export default {
       if (url.pathname === "/api/auth/login" && request.method === "POST") return await login(request, env);
       if (url.pathname === "/api/auth/logout" && request.method === "POST") return authResponse(request, env, { ok: true }, sessionCookie(request, "", 0));
       const user = await userFrom(request, env); if (!user) return response(request, env, { error: "请先登录后再继续" }, 401);
+      if (url.pathname === '/api/points' || url.pathname.startsWith('/api/points/') || url.pathname.startsWith('/api/shop/')) { await prepareUser(env, user); return response(request, env, await pointsAction(request, env.DB, user.id)); }
       if (url.pathname === "/api/bootstrap" && request.method === "GET") return await bootstrap(request, env, user);
       if (url.pathname === "/api/todos" && request.method === "POST") return await createTodo(request, env, user);
       const todoMatch = url.pathname.match(/^\/api\/todos\/([^/]+)$/); if (todoMatch && request.method === "PATCH") return await updateTodo(request, env, user, todoMatch[1]);

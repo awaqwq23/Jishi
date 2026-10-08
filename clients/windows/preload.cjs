@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("JishiNative", {
+  setBackgroundReminders(enabled) { ipcRenderer.send('jishi:background-reminders', !!enabled); },
   notify(title, body, key) {
     ipcRenderer.send("jishi:notify", String(title), String(body), String(key));
   },
@@ -26,3 +27,4 @@ contextBridge.exposeInMainWorld("JishiNative", {
     return () => ipcRenderer.removeListener("jishi:update-download", receive);
   },
 });
+ipcRenderer.on('jishi:reminder-error', () => window.dispatchEvent(new Event('jishi-native-reminders-unavailable')));

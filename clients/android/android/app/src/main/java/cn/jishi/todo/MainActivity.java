@@ -17,6 +17,7 @@ import android.webkit.URLUtil;
 import android.widget.Toast;
 
 import androidx.core.content.ContextCompat;
+import androidx.core.app.NotificationManagerCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -28,6 +29,7 @@ public class MainActivity extends BridgeActivity {
     private final List<PendingNotification> pendingNotifications = new ArrayList<>();
     private boolean notificationPermissionPending;
     private boolean exactAlarmPermissionPending;
+    private boolean notificationSettingsPending;
     private UpdateDownloadController updateDownloads;
 
     private static class PendingNotification {
@@ -88,6 +90,12 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        if (notificationSettingsPending) {
+            notificationSettingsPending = false;
+            boolean granted = NotificationManagerCompat.from(this).areNotificationsEnabled();
+            dispatchNotificationPermission(granted ? "granted" : "denied");
+            if (granted) requestExactAlarmAccess();
+        }
         if (exactAlarmPermissionPending) {
             exactAlarmPermissionPending = false;
             NotificationScheduler.restore(this);
@@ -178,6 +186,14 @@ public class MainActivity extends BridgeActivity {
         public void requestNotificationPermission() {
             runOnUiThread(() -> {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                    if (!NotificationManagerCompat.from(MainActivity.this).areNotificationsEnabled()) {
+                        dispatchNotificationPermission("denied");
+                        try {
+                            notificationSettingsPending = true;
+                            startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
+                        } catch (RuntimeException error) { notificationSettingsPending = false; }
+                        return;
+                    }
                     dispatchNotificationPermission("granted");
                     requestExactAlarmAccess();
                     return;
@@ -191,12 +207,17 @@ public class MainActivity extends BridgeActivity {
 
         @JavascriptInterface
         public String notificationPermissionState() {
-            return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ? "granted" : "denied";
+            return NotificationManagerCompat.from(MainActivity.this).areNotificationsEnabled() && (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) ? "granted" : "denied";
         }
 
         @JavascriptInterface
         public void syncReminders(String payload) {
-            runOnUiThread(() -> NotificationScheduler.sync(MainActivity.this, payload, true));
+            runOnUiThread(() -> {
+                try { NotificationScheduler.sync(MainActivity.this, payload, true); }
+                catch (RuntimeException error) {
+                    getBridge().getWebView().evaluateJavascript("window.dispatchEvent(new Event('jishi-native-reminders-unavailable'));", null);
+                }
+            });
         }
 
         @JavascriptInterface

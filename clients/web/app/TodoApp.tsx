@@ -7,6 +7,7 @@ import {
   Sparkles, Trash2, Upload, UserRound, X,
 } from "lucide-react";
 import Image from "next/image";
+import PointsBoard, { type PointsData } from "./PointsBoard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, withRuntimeBase } from "./runtime-path";
 
@@ -22,7 +23,7 @@ type Category = { id: string; name: string; color: string; isDefault: number };
 type Preset = { id: string; name: string; offsets: number[]; isDefault: number };
 type ScheduleKind = "routine" | "habit";
 type Recurrence = "once" | "daily" | "weekly" | "custom" | "holidays";
-type Section = "todos" | "routines" | "diary" | "mine" | "settings" | "trash";
+type Section = "points" | "todos" | "routines" | "diary" | "mine" | "settings" | "trash";
 type ScheduleItem = { id: string; kind: ScheduleKind; title: string; notes: string; recurrence: Recurrence; startDate: string; timeOfDay: string | null; weekdays: number[]; status: "active" | "deleted"; createdAt: string; updatedAt: string; deletedAt: string | null };
 type ScheduleRecord = { id: string; itemId: string; occurrenceDate: string; completedAt: string };
 type DiaryEntry = { id: string; entryDate: string; content: string; createdAt: string; updatedAt: string };
@@ -31,7 +32,7 @@ type SettingsShape = {
   acrylic: boolean; backgroundOpacity: number; backgroundAcrylic: boolean; backgroundUrl?: string;
 };
 type Profile = { id: string; email: string; name: string; avatarUrl?: string | null; settings: SettingsShape };
-type Bootstrap = { user: Profile; todos: Todo[]; categories: Category[]; reminderPresets: Preset[]; schedules: ScheduleItem[]; scheduleRecords: ScheduleRecord[]; diaryEntries: DiaryEntry[] };
+type Bootstrap = { points?: PointsData; user: Profile; todos: Todo[]; categories: Category[]; reminderPresets: Preset[]; schedules: ScheduleItem[]; scheduleRecords: ScheduleRecord[]; diaryEntries: DiaryEntry[] };
 type DeviceLogin = { rememberAccount: boolean; rememberPassword: boolean; autoLogin: boolean; email: string; password: string };
 
 const DEVICE_LOGIN_KEY = "jishi-device-login-v1";
@@ -43,6 +44,7 @@ const LOCAL_MEDIA_STORE = "backgrounds";
 
 type NativeReminder = { key: string; title: string; body: string; at: number };
 type NativeBridge = {
+  setBackgroundReminders?: (enabled: boolean) => void;
   notify: (title: string, body: string, key: string) => void;
   requestNotificationPermission?: () => void | Promise<string>;
   notificationPermissionState?: () => string | Promise<string>;
@@ -225,7 +227,7 @@ function toInputDate(value: string | null) {
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(apiUrl(url), { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "操作没有完成，请稍后重试");
+  if (!response.ok) throw Object.assign(new Error(data.error || "操作没有完成，请稍后重试"), { status: response.status });
   return data as T;
 }
 
@@ -632,7 +634,7 @@ export default function TodoApp() {
       const sendOnce = (key: string, title: string, body: string) => {
         if (notificationHistory.current.has(key)) return;
         notificationHistory.current.add(key); writeNotificationHistory(notificationHistory.current); setReminderNotice({ title, body });
-        if (notificationsSupported() && (native || Notification.permission === "granted")) void showDeviceNotification(title, body, key).catch(() => setError("系统通知发送失败，请检查此设备的通知权限"));
+        if (!native?.syncReminders && notificationsSupported() && (native || Notification.permission === "granted")) void showDeviceNotification(title, body, key).catch(() => setError("系统通知发送失败，请检查此设备的通知权限"));
       };
       data.todos.filter((todo) => todo.status === "active" && todo.deadline).forEach((todo) => {
         const deadline = new Date(todo.deadline!).getTime();
@@ -650,6 +652,19 @@ export default function TodoApp() {
     check(); const timer = window.setInterval(check, 30_000); document.addEventListener("visibilitychange", checkWhenVisible); window.addEventListener("focus", check);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", checkWhenVisible); window.removeEventListener("focus", check); };
   }, [data, notificationEnabled]);
+
+  useEffect(() => {
+    if (section !== 'points' || !data?.user.id) return;
+    const userId = data.user.id;
+    let active = true;
+    const refresh = () => void api<PointsData>('/api/points').then(points => {
+      if (active) setData(old => old?.user.id === userId ? { ...old, points } : old);
+    }).catch(() => {});
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    window.addEventListener('focus', refresh);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [section, data?.user.id]);
   useEffect(() => {
     const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
     if (!notificationEnabled || !native?.notificationPermissionState) return;
@@ -667,7 +682,8 @@ export default function TodoApp() {
     const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
     if (!data || !native?.syncReminders) return;
     const sync = () => {
-      const horizonDays = /JishiAndroid\//i.test(navigator.userAgent) ? 366 : 21;
+      const horizonDays = /JishiAndroid\/|JishiWindows\//i.test(navigator.userAgent) ? 366 : 21;
+      native.setBackgroundReminders?.(notificationEnabled);
       native.syncReminders?.(JSON.stringify(notificationEnabled ? upcomingNativeReminders(data, Date.now(), horizonDays) : []));
     };
     sync();
@@ -730,8 +746,8 @@ export default function TodoApp() {
   };
   const mutateTodo = async (id: string, patch: Record<string, unknown>) => {
     try {
-      const result = await api<{ todo: Todo }>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
-      setData((old) => old ? ({ ...old, todos: old.todos.map((todo) => todo.id === id ? result.todo : todo) }) : old);
+      const result = await api<{ todo: Todo; points?: PointsData }>(`/api/todos/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+      setData((old) => old ? ({ ...old, points: result.points || old.points, todos: old.todos.map((todo) => todo.id === id ? result.todo : todo) }) : old);
       if (patch.status === "completed") flash("完成了一件，做得好");
       if (patch.status === "deleted") { flash("已移入回收站"); if (selectedId === id) setSelectedId(null); }
     } catch (err) { setError(err instanceof Error ? err.message : "操作失败"); }
@@ -763,8 +779,8 @@ export default function TodoApp() {
     if (patch.status === "deleted") flash("已移入回收站"); if (patch.status === "active") flash("计划已恢复");
   };
   const completeSchedule = async (id: string, occurrenceDate: string, completed: boolean) => {
-    const result = await api<{ record: ScheduleRecord | null }>(`/api/schedules/${id}/completion`, { method: "PUT", body: JSON.stringify({ occurrenceDate, completed }) });
-    setData((old) => old ? ({ ...old, scheduleRecords: result.record ? [...old.scheduleRecords.filter((record) => !(record.itemId === id && record.occurrenceDate === occurrenceDate)), result.record] : old.scheduleRecords.filter((record) => !(record.itemId === id && record.occurrenceDate === occurrenceDate)) }) : old); flash(completed ? "已记录完成" : "已改为未完成");
+    const result = await api<{ record: ScheduleRecord | null; points?: PointsData }>(`/api/schedules/${id}/completion`, { method: "PUT", body: JSON.stringify({ occurrenceDate, completed }) });
+    setData((old) => old ? ({ ...old, points: result.points || old.points, scheduleRecords: result.record ? [...old.scheduleRecords.filter((record) => !(record.itemId === id && record.occurrenceDate === occurrenceDate)), result.record] : old.scheduleRecords.filter((record) => !(record.itemId === id && record.occurrenceDate === occurrenceDate)) }) : old); flash(completed ? "已记录完成" : "已改为未完成");
   };
   const deleteScheduleForever = async (id: string) => {
     if (!window.confirm("永久删除这项计划及其完成记录？此操作无法恢复。")) return;
@@ -807,7 +823,7 @@ export default function TodoApp() {
   return <div className={`app-shell acrylic-${settings.acrylic} ${settings.backgroundUrl ? "has-custom-background" : ""} ${settings.backgroundAcrylic ? "background-acrylic" : ""}`} style={{ "--accent": settings.accent, "--card-opacity": settings.cardOpacity / 100, "--background-opacity": settings.backgroundOpacity / 100, "--background-overlay": (100 - settings.backgroundOpacity) / 100, "--app-background-image": settings.backgroundUrl ? `url(${settings.backgroundUrl})` : "none" } as React.CSSProperties}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark small">记</span><div><strong>记时</strong><small>把今天安放好</small></div></div>
-      <nav className="side-nav" aria-label="主导航"><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
+      <nav className="side-nav" aria-label="主导航"><button className={section === "points" ? "active" : ""} onClick={() => setSection("points")}><Check size={19} /><span>打卡 · 商店</span></button><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
       <div className="sidebar-groups"><span>快捷查看</span><button onClick={() => { setSection("todos"); setStatusFilter("completed"); }}><Check size={17} />已完成</button><button onClick={() => setSection("trash")}><Trash2 size={17} />回收站</button><button onClick={() => setSection("settings")}><Settings size={17} />设置</button></div>
       <div className="sidebar-profile"><span className="avatar">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="38px" unoptimized /> : <DefaultAvatar />}</span><div><strong>{data.user.name}</strong><small>已同步</small></div><ChevronRight size={17} /></div>
     </aside>
@@ -821,12 +837,13 @@ export default function TodoApp() {
         <section className="task-list" aria-live="polite">{visibleTodos.length ? visibleTodos.map((todo) => <SwipeTask key={todo.id} todo={todo} category={todo.categoryId ? categoryMap.get(todo.categoryId) : undefined} onOpen={() => setSelectedId(todo.id)} onEdit={() => setEditor(todo)} onStatus={(status) => void mutateTodo(todo.id, { status })} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} />) : <EmptyState kind={section === "trash" ? "deleted" : statusFilter} />}</section>
       </>}
       {section === "routines" && <ScheduleBoard items={data.schedules} records={data.scheduleRecords} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} onCreate={createSchedule} onUpdate={updateSchedule} onComplete={completeSchedule} onDeleteForever={deleteScheduleForever} />}
+      {section === "points" && data.points && <PointsBoard userId={data.user.id} value={data.points} request={(path, method, body) => api<PointsData>(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })} onChange={points => setData(old => old ? { ...old, points } : old)} />}
       {section === "diary" && <DiaryBoard entries={data.diaryEntries} onSave={saveDiary} />}
       {(section === "mine" || section === "settings") && <ProfileSettings data={data} settings={settings} section={section} notificationEnabled={notificationEnabled} onToggleNotifications={toggleNotifications} onTestNotifications={testNotifications} onSection={setSection} onSaveProfile={saveProfile} onSaveAppearance={saveAppearance} onPreviewSettings={previewSettings} onUpload={uploadImage} onRemoveBackground={removeBackground} onReload={load} setData={setData} flash={flash} />}
       {selected && <DetailPanel todo={selected} category={selected.categoryId ? categoryMap.get(selected.categoryId) : undefined} preset={selected.reminderPresetId ? presetMap.get(selected.reminderPresetId) : undefined} onClose={() => setSelectedId(null)} onEdit={() => setEditor(selected)} onStatus={(status) => void mutateTodo(selected.id, { status })} onDeleteForever={() => void deleteForever(selected)} />}
     </main>
 
-    <nav className="bottom-nav module-nav" aria-label="移动端主导航"><button className={section === "todos" || section === "trash" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={20} /><span>待办</span></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={20} /><span>定期</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={20} /><span>日记</span></button><button className={section === "mine" || section === "settings" ? "active" : ""} onClick={() => setSection("mine")}><UserRound size={20} /><span>我的</span></button></nav>
+    <nav className="bottom-nav module-nav" aria-label="移动端主导航"><button className={section === "points" ? "active" : ""} onClick={() => setSection("points")}><Check size={19} /><span>积分</span></button><button className={section === "todos" || section === "trash" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={20} /><span>待办</span></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={20} /><span>定期</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={20} /><span>日记</span></button><button className={section === "mine" || section === "settings" ? "active" : ""} onClick={() => setSection("mine")}><UserRound size={20} /><span>我的</span></button></nav>
     {editor && <TodoEditor initial={editor === "new" ? undefined : editor} categories={data.categories} presets={data.reminderPresets} onClose={() => setEditor(null)} onSave={(value) => void saveTodo(value)} saving={saving} />}
     {reminderNotice && <section className="reminder-popup" role="alertdialog" aria-live="assertive" aria-label="记时提醒"><span className="reminder-popup-icon"><Bell size={21} /></span><div><strong>{reminderNotice.title}</strong><p>{reminderNotice.body}</p></div><button className="icon-button" onClick={() => setReminderNotice(null)} aria-label="关闭提醒弹窗"><X size={18} /></button></section>}
     {notice && <div className="toast"><Check size={17} />{notice}</div>}{error && <div className="error-toast"><span>{error}</span><button onClick={() => setError("")} aria-label="关闭错误"><X size={16} /></button></div>}
@@ -869,11 +886,11 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
   const nativeNotifications = typeof window !== "undefined" && !!(window as Window & { JishiNative?: NativeBridge }).JishiNative;
   const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
   const notificationDescription = /JishiWindows\//i.test(agent)
-    ? "Windows 开启记时后会弹出系统通知；关闭窗口会驻留托盘继续提醒"
+    ? "Windows 提醒开启后自动随系统登录在后台运行，无需打开窗口；关闭窗口保留提醒，托盘退出会暂停提醒。"
     : /JishiAndroid\//i.test(agent)
       ? "Android 会申请通知与精确定时权限；退出记时后仍由系统到点通知"
       : /JishiHarmony\//i.test(agent)
-        ? "鸿蒙会申请消息通知权限，并通过系统代理提醒在应用关闭后到点通知"
+        ? "鸿蒙需允许消息通知，并安装已获华为代理提醒授权的签名版本，才能在应用关闭后由系统到点通知"
         : nativeNotifications ? "手机客户端可在后台保持定时提醒" : "网页版打开时会显示应用内弹窗，并尝试发送浏览器系统通知";
   const committedAppearance = useRef({ cardOpacity: settings.cardOpacity, backgroundOpacity: settings.backgroundOpacity, acrylic: settings.acrylic, backgroundAcrylic: settings.backgroundAcrylic });
   const [deviceLogin, setDeviceLogin] = useState(readDeviceLogin);

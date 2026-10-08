@@ -4,18 +4,22 @@ const path = require("node:path");
 const config = require(path.join(__dirname, "app-config.json"));
 const { resolveAppUrl, uniqueUrls } = require(path.join(__dirname, "host-resolver.cjs"));
 const { createUpdateDownloader, safeRequest } = require(path.join(__dirname, "update-downloader.cjs"));
+const { createReminderStore } = require(path.join(__dirname, "reminder-store.cjs"));
 
 const APP_URLS = uniqueUrls([process.env.JISHI_WEB_URL, config.webUrl, ...(config.fallbackUrls || [])]);
 const APP_ORIGINS = [...new Set(APP_URLS.map((url) => new URL(url).origin))];
 const SMOKE_TEST = process.argv.includes("--jishi-smoke-test");
 let downloadHandlerInstalled = false;
-const reminderTimers = new Map();
+let reminderStore;
+const backgroundLaunch = process.argv.includes('--background-reminders');
 let tray;
 let mainWindow;
 let isQuitting = false;
 let updateDownloader;
 
 app.setAppUserModelId("cn.jishi.todo");
+if (!SMOKE_TEST && !app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } else void openWindow(); });
 
 function showNativeNotification(window, title, body) {
   if (!Notification.isSupported()) return;
@@ -25,18 +29,8 @@ function showNativeNotification(window, title, body) {
 }
 
 function syncNativeReminders(window, payload) {
-  for (const timer of reminderTimers.values()) clearTimeout(timer);
-  reminderTimers.clear();
-  let reminders;
-  try { reminders = JSON.parse(String(payload)); } catch { return; }
-  if (!Array.isArray(reminders)) return;
-  const now = Date.now();
-  for (const reminder of reminders.slice(0, 300)) {
-    const key = String(reminder?.key || ""); const at = Number(reminder?.at);
-    if (!key || !Number.isFinite(at) || at <= now || at - now > 21 * 86400000) continue;
-    const timer = setTimeout(() => { reminderTimers.delete(key); showNativeNotification(window, reminder.title || "记时提醒", reminder.body || "计划时间已到"); }, at - now);
-    reminderTimers.set(key, timer);
-  }
+  try { reminderStore?.sync(String(payload)); }
+  catch { window?.webContents.send('jishi:reminder-error'); }
 }
 
 function isTrustedSender(event) {
@@ -58,6 +52,7 @@ function createWindow(appUrl) {
     width: 1180, height: 780, minWidth: 760, minHeight: 560,
     backgroundColor: "#f4f0e8", title: "记时",
     autoHideMenuBar: true,
+    show: !backgroundLaunch,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") },
   });
   mainWindow = window;
@@ -109,7 +104,9 @@ async function openWindow() {
     createWindow(appUrl);
   } catch (error) {
     if (SMOKE_TEST) { console.error(error); app.exit(1); return; }
-    const window = new BrowserWindow({ width: 720, height: 480, backgroundColor: "#f4f0e8", title: "记时" });
+    const window = new BrowserWindow({ width: 720, height: 480, show: !backgroundLaunch, backgroundColor: "#f4f0e8", title: "记时" });
+    mainWindow = window;
+    window.on('close', event => { if (!isQuitting && tray) { event.preventDefault(); window.hide(); } });
     const message = encodeURIComponent("记时服务器暂时无法连接，请检查网络后重新打开应用。");
     void window.loadURL(`data:text/html;charset=utf-8,<meta charset=utf-8><title>记时</title><style>body{font-family:sans-serif;background:%23f4f0e8;color:%2345433f;display:grid;place-content:center;height:100vh;margin:0;text-align:center}h1{font-size:28px}p{color:%23736d64}</style><h1>暂时无法连接</h1><p>${message}</p>`);
   }
@@ -117,6 +114,11 @@ async function openWindow() {
 
 ipcMain.on("jishi:notify", (event, title, body) => { if (isTrustedSender(event)) showNativeNotification(BrowserWindow.fromWebContents(event.sender), title, body); });
 ipcMain.on("jishi:sync-reminders", (event, payload) => { if (isTrustedSender(event)) syncNativeReminders(BrowserWindow.fromWebContents(event.sender), payload); });
+ipcMain.on('jishi:background-reminders', (event, enabled) => {
+  if (!isTrustedSender(event) || typeof enabled !== 'boolean' || SMOKE_TEST) return;
+  if (process.platform === 'win32' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath, args: ['--background-reminders'] });
+  if (!enabled) reminderStore?.sync('[]');
+});
 ipcMain.handle("jishi:notification-permission", (event) => isTrustedSender(event) && Notification.isSupported() ? "granted" : "denied");
 ipcMain.handle("jishi:update-download-state", (event) => isTrustedSender(event) ? updateDownloader?.getState() : { status: "failed", message: "更新页面来源不受信任" });
 ipcMain.handle("jishi:update-download-start", (event, payload) => {
@@ -129,6 +131,13 @@ ipcMain.handle("jishi:update-download-start", (event, payload) => {
 });
 
 app.whenReady().then(async () => {
+  if (!SMOKE_TEST) {
+    reminderStore = createReminderStore({ file: path.join(app.getPath('userData'), 'reminders.json'), notify: item => showNativeNotification(mainWindow, item.title, item.body) });
+    reminderStore.restore();
+    const deliver = () => { try { reminderStore.tick(); } catch { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('jishi:reminder-error'); } };
+    deliver();
+    setInterval(deliver, 15000);
+  }
   updateDownloader = createUpdateDownloader({
     fetchImpl: net.fetch,
     stateDir: path.join(app.getPath("userData"), "update-download"),

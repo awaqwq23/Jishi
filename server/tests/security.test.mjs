@@ -30,6 +30,48 @@ before(async () => {
 });
 after(async () => { await runtime?.dispose(); });
 
+test('points check-in, completion reversal and atomic redemption contracts', async () => {
+  const owner=await account('Points'); const cookie=owner.cookie;
+  const rules={signinReward:5,signinPenalty:2,taskReward:10,taskPenalty:3,habitReward:7,habitPenalty:4};
+  await json(await call('/api/points/rules',{cookie,method:'PUT',body:rules}),200);
+  const checkins=await Promise.all([call('/api/points/checkin',{cookie,method:'POST',body:{}}),call('/api/points/checkin',{cookie,method:'POST',body:{}})]);
+  for(const response of checkins) await json(response,200);
+  assert.equal((await json(await call('/api/points',{cookie}),200)).balance,5);
+  const {todo}=await json(await call('/api/todos',{cookie,method:'POST',body:{title:'points task'}}),201);
+  let result=await json(await call(`/api/todos/${todo.id}`,{cookie,method:'PATCH',body:{status:'completed'}}),200);
+  assert.equal(result.points.balance,15);
+  result=await json(await call(`/api/todos/${todo.id}`,{cookie,method:'PATCH',body:{status:'completed'}}),200); assert.equal(result.points.balance,15);
+  result=await json(await call(`/api/todos/${todo.id}`,{cookie,method:'PATCH',body:{status:'active'}}),200); assert.equal(result.points.balance,5);
+  result=await json(await call(`/api/todos/${todo.id}`,{cookie,method:'PATCH',body:{status:'completed'}}),200); assert.equal(result.points.balance,15);
+  const shop=await json(await call('/api/shop/products',{cookie,method:'POST',body:{name:'KFC',cost:10}}),200); const productId=shop.products[0].id;
+  await json(await call('/api/shop/redeem',{cookie:bob.cookie,method:'POST',body:{productId,requestId:randomUUID()}}),404);
+  const requestId=randomUUID(); const redeemed=await json(await call('/api/shop/redeem',{cookie,method:'POST',body:{productId,requestId}}),200); assert.equal(redeemed.balance,5);
+  const retried=await json(await call('/api/shop/redeem',{cookie,method:'POST',body:{productId,requestId}}),200); assert.equal(retried.balance,5);
+  await json(await call('/api/shop/redeem',{cookie,method:'POST',body:{productId,requestId:randomUUID()}}),409);
+  const small=await json(await call('/api/shop/products',{cookie,method:'POST',body:{name:'small reward',cost:5}}),200); const smallId=small.products.find(p=>p.name==='small reward').id;
+  const concurrent=await Promise.all([call('/api/shop/redeem',{cookie,method:'POST',body:{productId:smallId,requestId:randomUUID()}}),call('/api/shop/redeem',{cookie,method:'POST',body:{productId:smallId,requestId:randomUUID()}})]);
+  assert.deepEqual(concurrent.map(response=>response.status).sort(),[200,409]);
+  assert.equal((await json(await call('/api/points',{cookie}),200)).balance,0);
+  for(const cost of [-1,0,1.5,'10']) await json(await call('/api/shop/products',{cookie,method:'POST',body:{name:'invalid',cost}}),400);
+  const invalid=await call('/api/points',{cookie:'invalid'}); await json(invalid,401);
+});
+
+test('missed days settle once; habits refund penalties on late completion and restore on undo', async()=>{
+  const owner=await account('Settlement'), cookie=owner.cookie;
+  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+  const yesterday=new Date(new Date(today+'T00:00:00Z').getTime()-86400000).toISOString().slice(0,10);
+  const rules={signinReward:5,signinPenalty:2,taskReward:10,taskPenalty:3,habitReward:7,habitPenalty:4};
+  await json(await call('/api/points/rules',{cookie,method:'PUT',body:rules}),200);
+  const {item}=await json(await call('/api/schedules',{cookie,method:'POST',body:{title:'daily habit',kind:'habit',startDate:yesterday}}),201);
+  await db.prepare('UPDATE schedule_items SET created_at=? WHERE id=?').bind(yesterday+'T00:00:00.000Z',item.id).run();
+  await db.prepare('UPDATE point_rules SET started_at=?,settled_date=? WHERE user_id=?').bind(yesterday+'T00:00:00.000Z',yesterday,owner.user.id).run();
+  let state=await json(await call('/api/points',{cookie}),200); assert.equal(state.balance,-6);
+  state=await json(await call('/api/points',{cookie}),200); assert.equal(state.balance,-6);
+  let result=await json(await call(`/api/schedules/${item.id}/completion`,{cookie,method:'PUT',body:{occurrenceDate:yesterday}}),200); assert.equal(result.points.balance,5);
+  result=await json(await call(`/api/schedules/${item.id}/completion`,{cookie,method:'PUT',body:{occurrenceDate:yesterday,completed:false}}),200); assert.equal(result.points.balance,-6);
+  result=await json(await call(`/api/schedules/${item.id}/completion`,{cookie,method:'PUT',body:{occurrenceDate:yesterday}}),200); assert.equal(result.points.balance,5);
+});
+
 test("forged gateway headers and tampered/expired legacy cookies cannot authenticate", async () => {
   await json(await call("/api/bootstrap", { headers: { "x-auth-request-email": alice.email, "oai-authenticated-user-id": alice.user.id, "oai-authenticated-user-email": alice.email } }), 401);
   await json(await call("/api/bootstrap", { cookie: `${alice.cookie}tampered` }), 401);

@@ -124,3 +124,15 @@ button { cursor: pointer; }
 @media (max-width: 460px) { .filter-panel { grid-template-columns: 1fr; }.top-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }.topbar { align-items: flex-start; }.status-tabs { gap: 20px; }.profile-hero { align-items: flex-start; }.theme-options button { padding: 4px; }.detail-actions .button { padding-inline: 12px; }.inline-form { flex-direction: column; }.background-actions { flex-direction: column; }.manage-row { grid-template-columns: 1fr 38px auto 42px; }.manage-row.preset { grid-template-columns: 1fr; }.crop-viewport { width: calc(100% - 32px); margin-inline: 16px; }.crop-controls { padding-inline: 18px; }.crop-controls label { grid-template-columns: 86px 1fr; }.profile-settings-row { grid-template-columns: 1fr; }.settings-avatar { margin: 0 auto; }.offset-row { grid-template-columns: minmax(70px,1fr) 84px 38px; }.data-transfer-row { align-items: flex-start; flex-direction: column; }.data-transfer-row > div { justify-content: flex-start; }.weekday-picker { grid-template-columns: repeat(4,1fr); }.diary-history > div { grid-template-columns: 1fr; }.diary-editor textarea { min-height: 360px; padding: 20px; } }
 @media (max-width: 460px) { .update-layer { align-items: end; padding: 0; }.update-card { border-radius: 25px 25px 0 0; padding: 27px 22px calc(22px + env(safe-area-inset-bottom)); }.update-card h2 { font-size: 25px; }.update-actions { display: grid; grid-template-columns: 1fr 1fr; }.update-actions .button { width: 100%; }.update-actions .button:only-child { grid-column: 1 / -1; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* Daily check-ins and personal rewards */
+.points-board { max-width: 1000px; margin: 0 auto; }
+.points-balance { color: var(--accent); font-size: 24px; white-space: nowrap; }
+.points-rules { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px; margin: 20px 0; align-items: center; }
+.points-rule-row { display: contents; }
+.points-rules input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line, #ddd); border-radius: 8px; background: var(--card, white); color: inherit; }
+.points-products { display: grid; gap: 16px; }
+.points-product { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line, #ddd); padding: 12px 0; }
+.points-help { font-size: 13px; line-height: 1.8; opacity: .8; }
+.points-error { color: #b24436; }
+.bottom-nav.module-nav { grid-template-columns: repeat(5, 1fr); }
