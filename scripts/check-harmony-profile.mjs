@@ -1,11 +1,13 @@
 import {readFile} from 'node:fs/promises';
 import {X509Certificate} from 'node:crypto';
 import {resolve} from 'node:path';
+import {parseArgs} from 'node:util';
 
 // Print only release identity/permissions; never dump the signed profile or key.
-const directory=resolve(process.argv[2] || '.local/signing/harmony');
-let certificate=new X509Certificate(await readFile(resolve(directory,'jishi-harmony-release.cer')));
-const bytes=await readFile(resolve(directory,'jishi-harmony-release.p7b'));
+const {values,positionals}=parseArgs({options:{profile:{type:'string'},certificate:{type:'string'}},allowPositionals:true});
+const directory=resolve(positionals[0] || '.local/signing/harmony');
+let certificate=new X509Certificate(await readFile(resolve(values.certificate || resolve(directory,'jishi-harmony-release.cer'))));
+const bytes=await readFile(resolve(values.profile || resolve(directory,'jishi-harmony-release.p7b')));
 const profiles=[];
 function walk(start,end) {
   let offset=start;
@@ -28,8 +30,12 @@ walk(0,bytes.length);
 const profile=profiles.find(value=>value['bundle-info']);if(!profile)throw new Error('Release profile metadata unavailable');
 const identity=profile['bundle-info'];
 if(identity['bundle-name']!=='cn.jishi.todo')throw new Error('Profile belongs to another application');
+if(profile.type!=='release')throw new Error('A release package requires a release profile');
 const leaf=identity['distribution-certificate'] || identity['development-certificate'];
 if(leaf) certificate=new X509Certificate(leaf);
+if(certificate.ca)throw new Error('Release profile must identify a leaf signing certificate');
+const now=Date.now();
+if(now<Date.parse(certificate.validFrom)||now>=Date.parse(certificate.validTo))throw new Error('Release signing certificate is not currently valid');
 const permissions=profile.acls?.['allowed-acls'] || [];
 console.log(JSON.stringify({bundleName:identity['bundle-name'],type:profile.type,certificateExpires:certificate.ca?undefined:certificate.validTo,agentReminderGranted:permissions.includes('ohos.permission.PUBLISH_AGENT_REMINDER')},null,2));
 if(!permissions.includes('ohos.permission.PUBLISH_AGENT_REMINDER'))process.exitCode=2;

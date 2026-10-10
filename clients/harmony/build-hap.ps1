@@ -90,6 +90,7 @@ try {
 
   if ($BuildMode -eq 'release') {
     $signTool = Join-Path $env:DEVECO_SDK_HOME 'default/openharmony/toolchains/lib/hap-sign-tool.jar'
+    $profileChecker = Join-Path $repoRoot 'scripts/check-harmony-profile.mjs'
     if (!(Test-Path -LiteralPath $signTool -PathType Leaf)) { throw 'HarmonyOS SDK HAP signature verifier was not found.' }
     foreach ($output in $outputs) {
       if ($output.Name -match 'unsigned') { throw 'Release artifact is unsigned; no package was delivered.' }
@@ -104,11 +105,15 @@ try {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($hapEntry, $hapToVerify)
             $verified = & (Join-Path $env:JAVA_HOME 'bin/java.exe') -jar $signTool verify-app -inFile $hapToVerify -outCertChain (Join-Path $stage 'verified-cert.cer') -outProfile (Join-Path $stage 'verified-profile.p7b') 2>&1
             if ($LASTEXITCODE -ne 0) { throw 'Release APP contains an HAP without a valid signature; no package was delivered.' }
+            & node $profileChecker --profile (Join-Path $stage 'verified-profile.p7b') --certificate (Join-Path $stage 'verified-cert.cer')
+            if ($LASTEXITCODE -ne 0) { throw 'Release APP profile is invalid or lacks agent reminder permission; no package was delivered.' }
           }
         } finally { $archive.Dispose() }
       } else {
         $verified = & (Join-Path $env:JAVA_HOME 'bin/java.exe') -jar $signTool verify-app -inFile $hapToVerify -outCertChain (Join-Path $stage 'verified-cert.cer') -outProfile (Join-Path $stage 'verified-profile.p7b') 2>&1
         if ($LASTEXITCODE -ne 0) { throw 'Release HAP signature verification failed; no package was delivered.' }
+        & node $profileChecker --profile (Join-Path $stage 'verified-profile.p7b') --certificate (Join-Path $stage 'verified-cert.cer')
+        if ($LASTEXITCODE -ne 0) { throw 'Release HAP profile is invalid or lacks agent reminder permission; no package was delivered.' }
       }
     }
   }

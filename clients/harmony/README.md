@@ -13,7 +13,7 @@
 3. 在 DevEco Studio 中配置调试签名；真机安装必须使用与设备/账号匹配的签名证书。
 4. 在 PowerShell 执行 `./build-hap.ps1 -HvigorPath <hvigorw.bat或hvigor.js路径>`，或在 DevEco Studio 中选择 **Build > Build Hap(s)/APP(s) > Build Hap(s)**。
 
-脚本自动复制必要工程文件到 ASCII 临时目录，解决中文仓库路径无法编译的问题；输出复制到仓库 `.local/build/harmony/`，并打印 SHA256。普通 debug 临时目录保留编译日志。发布 HAP/APP 必须提供发布签名配置，且用 SDK 工具验证 HAP 签名后才交付；含签名配置的临时目录在构建结束时清理。
+脚本自动复制必要工程文件到 ASCII 临时目录，解决中文仓库路径无法编译的问题；输出复制到仓库 `.local/build/harmony/`，并打印 SHA256。普通 debug 临时目录保留编译日志。发布 HAP/APP 必须提供发布签名配置；验证每个 HAP 签名后，还会检查包内 Profile 的包名、release 类型、有效签名证书和代理提醒授权，全部通过才交付。含签名配置的临时目录在构建结束时清理。
 
 ## 发布签名（开发者本人操作）
 
