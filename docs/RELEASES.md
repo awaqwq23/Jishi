@@ -69,3 +69,11 @@ Windows 0.4.6 / Android 0.4.7；对应原 Web `web-1eb33d5ff18eb60d`。完整生
 - 鸿蒙源码候选同步提升至 0.3.2 / 3000002，包括工程、模块和 User-Agent 标记；尚无对应正式 HAP/APP。商店介绍与更新说明先保存在忽略的审核材料目录。真机通知测试按用户安排推迟至可下载后，不将其填写成发布前已完成。
 - 用户重新打开页面后，已实际核验 AGC 登录账号 awaqwq233、记时包名 `cn.jishi.todo` 和商店“准备提交”状态。使用既有生效发布证书创建 `Jishi Harmony Release 0.3.2 Reminder` 发布 Profile；平台提示添加成功，列表显示 2026-10-10 更新、生效、2029-09-18 失效。截图保存为 `.local/signing/harmony/review/profile-created.jpg`。
 - 新 Profile 两次自动下载等待超时，未找到新的本地 p7b，尚未核验文件内代理提醒授权，未覆盖旧签名材料。已请用户手动下载该已存在的 Profile 并提供本地路径。官方工具下载中心打开后要求单独登录；长时间等待后 AGC 也跳转登录页，需恢复登录再继续。未上传新的签名 APP 或提交商店审核。
+
+## 2026-10-11 鸿蒙工具链、授权和原生编译
+
+- 从用户 Downloads 找到 `Jishi Harmony Release 0.3.2 ReminderRelease.p7b` 及官方 Command Line Tools 26.0.0.851（2722224870 字节，SHA-256 `ac8d0563f47f95ca78799ea4aa494fa260bc3f7c8f2a569ac629af1794b5d71c`）。工具链移至 `C:\Users\Administrator\AppData\Local\Jishi\toolchains\deveco26`，解决华为资源编译器拒绝中文 SDK 路径的问题。
+- AGC APP ID 页面实际显示代理提醒“已通过”；新 Profile 的授权位于 `app-services-capabilities.com.huawei.service.notification.agentreminder`。修正此前只检查 ACL 的误判；新 Profile 通过、旧 Profile 退出码 2 被拒绝，授权格式及缺失/畸形数据的 3 项回归测试通过。
+- 使用 HarmonyOS 26 SDK 和 Java 21 完成 0.3.2 原生 ArkTS 编译及 unsigned debug HAP 构建；修复废弃上下文调用、返回键和窗口初始化异常处理，调度数量调整为 30，兼容早期支持设备的限制。复测 34 个构建任务通过，无 ArkTS 警告；仍有模块 SemVer 元数据警告及 debug 未配置签名提示。
+- 提供本地密码窗口签名入口，沿用现有私钥和发布证书，密码不经过聊天；临时 Hvigor 加密材料在结束后清理。使用一次性随机测试密钥验证密码校验、官方 Hvigor 解密互操作和无明文配置，全部通过并删除测试材料。正式签名仍待开发者在本地输入既有 P12 密码，未上传或提交商店审核，未完成真机验收。按用户要求，真机通知测试在商店可下载后由本人执行。
+- 更新清单契约、Profile 检查脚本语法与本地签名入口语法通过。安全审计无高危/严重问题，已有 8 项中危依赖保持记录；未改变生产 Web/Server 或当前正式清单。

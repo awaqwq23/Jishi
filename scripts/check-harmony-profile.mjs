@@ -2,6 +2,7 @@ import {readFile} from 'node:fs/promises';
 import {X509Certificate} from 'node:crypto';
 import {resolve} from 'node:path';
 import {parseArgs} from 'node:util';
+import {hasAgentReminderGrant} from './harmony-profile-policy.mjs';
 
 // Print only release identity/permissions; never dump the signed profile or key.
 const {values,positionals}=parseArgs({options:{profile:{type:'string'},certificate:{type:'string'}},allowPositionals:true});
@@ -36,6 +37,6 @@ if(leaf) certificate=new X509Certificate(leaf);
 if(certificate.ca)throw new Error('Release profile must identify a leaf signing certificate');
 const now=Date.now();
 if(now<Date.parse(certificate.validFrom)||now>=Date.parse(certificate.validTo))throw new Error('Release signing certificate is not currently valid');
-const permissions=profile.acls?.['allowed-acls'] || [];
-console.log(JSON.stringify({bundleName:identity['bundle-name'],type:profile.type,certificateExpires:certificate.ca?undefined:certificate.validTo,agentReminderGranted:permissions.includes('ohos.permission.PUBLISH_AGENT_REMINDER')},null,2));
-if(!permissions.includes('ohos.permission.PUBLISH_AGENT_REMINDER'))process.exitCode=2;
+const agentReminderGranted=hasAgentReminderGrant(profile);
+console.log(JSON.stringify({bundleName:identity['bundle-name'],type:profile.type,certificateExpires:certificate.validTo,agentReminderGranted},null,2));
+if(!agentReminderGranted)process.exitCode=2;

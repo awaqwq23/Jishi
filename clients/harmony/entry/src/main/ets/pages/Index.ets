@@ -36,7 +36,7 @@ struct Index {
     },
     requestNotificationPermission: (): string => {
       if (!this.bridgeAllowed()) return 'denied';
-      const context = getContext(this) as common.UIAbilityContext;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       notificationManager.requestEnableNotification(context)
         .then(() => this.emitPermission('granted'))
         .catch(() => this.emitPermission('denied'));
@@ -61,10 +61,12 @@ struct Index {
   }
 
   onBackPress(): boolean {
-    if (!this.loadFailed && this.controller.accessBackward()) {
-      this.controller.backward();
-      return true;
-    }
+    try {
+      if (!this.loadFailed && this.controller.accessBackward()) {
+        this.controller.backward();
+        return true;
+      }
+    } catch (_) { return false; }
     return false;
   }
 

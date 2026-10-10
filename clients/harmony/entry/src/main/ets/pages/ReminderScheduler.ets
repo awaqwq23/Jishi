@@ -24,12 +24,12 @@ export class ReminderScheduler {
       reminders = reminders.filter((item: NativeReminder) => item && typeof item.key === 'string' &&
         typeof item.title === 'string' && typeof item.body === 'string' && Number.isFinite(item.at) &&
         item.at > now && item.at <= now + 21 * 86400000).sort((a: NativeReminder, b: NativeReminder) => a.at - b.at);
-      // HarmonyOS limits the number of agent reminders. Retain the nearest 32;
+      // Retain the nearest 30 for compatibility with older supported devices;
       // opening/syncing the app replenishes the queue as reminders expire.
       await reminderAgentManager.cancelAllReminders();
       if (reminders.length && !notificationManager.isNotificationEnabledSync()) throw new Error('Notifications disabled');
       const seen: Set<string> = new Set<string>();
-      for (const item of reminders.slice(0, 32)) {
+      for (const item of reminders.slice(0, 30)) {
         if (generation !== this.generation) return;
         if (seen.has(item.key)) continue;
         seen.add(item.key);
