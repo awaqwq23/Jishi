@@ -1,7 +1,7 @@
 {
   "modelVersion": "5.0.0",
   "name": "jishi-harmony",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "记时 HarmonyOS 客户端",
   "dependencies": {},
   "devDependencies": {
