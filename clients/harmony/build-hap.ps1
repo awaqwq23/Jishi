@@ -86,6 +86,11 @@ try {
 
   $outputs = @(Get-ChildItem -LiteralPath $stage -Filter "*.$Artifact" -File -Recurse |
     Where-Object { $_.FullName -match '[\\/]outputs[\\/]' })
+  if ($BuildMode -eq 'release') {
+    # Hvigor can retain unsigned intermediates alongside signed deliverables.
+    # Only candidates without the unsigned marker enter signature verification.
+    $outputs = @($outputs | Where-Object { $_.Name -notmatch 'unsigned' })
+  }
   if (!$outputs.Count) { throw "No .$Artifact artifact was generated. Stage: $stage" }
 
   if ($BuildMode -eq 'release') {
