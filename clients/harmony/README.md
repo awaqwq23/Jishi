@@ -1,6 +1,6 @@
 # HarmonyOS 客户端
 
-这是独立的 HarmonyOS ArkTS/ArkUI 工程。当前发布候选为 0.3.2（构建号 3000002），授权 Profile 已校验、原生调试编译已通过。经用户明确授权，新发布私钥与 CSR 已生成，密码使用 Windows 当前用户 DPAPI 加密保存；等待华为签发匹配的新发布证书及 Profile，尚未正式签名或商店提交。默认连接 `https://jishi.awaqwq233.com/`，连接失败时自动切换到 `https://awaqwq233.com/note/`。最低兼容 API 12，构建配置使用 HarmonyOS 26 SDK。上架文案和真实状态见 [上架材料](store-listing.md)。
+这是独立的 HarmonyOS ArkTS/ArkUI 工程。当前发布候选为 0.3.2（构建号 3000002），新证书、Profile、代理提醒授权及私钥匹配均已校验。正式签名 APP 已通过官方 SDK 验签，交付于 `releases/current/Jishi-Harmony-0.3.2.app`，尚未上传商店或完成真机验收。默认连接 `https://jishi.awaqwq233.com/`，连接失败时自动切换到 `https://awaqwq233.com/note/`。最低兼容 API 12，构建配置使用 HarmonyOS 26 SDK。上架文案和真实状态见 [上架材料](store-listing.md)。
 
 客户端通过限制 HTTPS 主站、备用站来源的 `JishiNative` 代理接入通知授权、即时通知和系统代理定时提醒；禁用文件访问与混合 HTTP 内容。`syncReminders` 同步最近 21 天内最早 30 个提醒，兼容早期支持设备的限制，重新打开或同步时补充。退出账号及进入登录页时清空原账号提醒。系统拒绝代理提醒时，网页明确提示降级为应用内提醒。
 
@@ -13,7 +13,7 @@
 3. 在 DevEco Studio 中配置调试签名；真机安装必须使用与设备/账号匹配的签名证书。
 4. 在 PowerShell 执行 `./build-hap.ps1 -HvigorPath <hvigorw.bat或hvigor.js路径>`，或在 DevEco Studio 中选择 **Build > Build Hap(s)/APP(s) > Build Hap(s)**。
 
-脚本自动复制必要工程文件到 ASCII 临时目录，解决中文仓库路径无法编译的问题；输出复制到仓库 `.local/build/harmony/`，并打印 SHA256。普通 debug 临时目录保留编译日志。发布 HAP/APP 必须提供发布签名配置；验证每个 HAP 签名后，还会检查包内 Profile 的包名、release 类型、有效签名证书和代理提醒授权，全部通过才交付。含签名配置的临时目录在构建结束时清理。
+脚本自动复制必要工程文件到 ASCII 临时目录，解决中文仓库路径无法编译的问题；输出复制到仓库 `.local/build/harmony/`，并打印 SHA256。普通 debug 临时目录保留编译日志。发布 HAP/APP 必须提供发布签名配置。单独 HAP 验证其签名；官方 Hvigor 默认 APP 打包时签名覆盖整个容器，内部模块不保留独立签名块，因此检查 APP 包含 HAP 后直接验证 APP 签名及摘要。再检查签名内 Profile 的包名、release 类型、证书匹配、有效期和代理提醒授权，全部通过才交付。已用修改内容的 APP 验证 SDK 会拒绝篡改。含签名配置的临时目录在构建结束时清理。
 
 ## 发布签名（开发者本人操作）
 

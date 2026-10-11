@@ -7,7 +7,10 @@ import {hasAgentReminderGrant} from './harmony-profile-policy.mjs';
 // Print only release identity/permissions; never dump the signed profile or key.
 const {values,positionals}=parseArgs({options:{profile:{type:'string'},certificate:{type:'string'}},allowPositionals:true});
 const directory=resolve(positionals[0] || '.local/signing/harmony');
-let certificate=new X509Certificate(await readFile(resolve(values.certificate || resolve(directory,'jishi-harmony-release.cer'))));
+const certificateBytes=await readFile(resolve(values.certificate || resolve(directory,'jishi-harmony-release.cer')));
+const certificateChain=(certificateBytes.toString().match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g)
+  || [certificateBytes]).map(value=>new X509Certificate(value));
+let certificate=certificateChain[0];
 const bytes=await readFile(resolve(values.profile || resolve(directory,'jishi-harmony-release.p7b')));
 const profiles=[];
 function walk(start,end) {
@@ -33,7 +36,12 @@ const identity=profile['bundle-info'];
 if(identity['bundle-name']!=='cn.jishi.todo')throw new Error('Profile belongs to another application');
 if(profile.type!=='release')throw new Error('A release package requires a release profile');
 const leaf=identity['distribution-certificate'] || identity['development-certificate'];
-if(leaf) certificate=new X509Certificate(leaf);
+if(leaf) {
+  certificate=new X509Certificate(leaf);
+  if(!certificateChain.some(value=>value.raw.equals(certificate.raw))) {
+    throw new Error('Profile signing certificate does not match the selected release certificate');
+  }
+}
 if(certificate.ca)throw new Error('Release profile must identify a leaf signing certificate');
 const now=Date.now();
 if(now<Date.parse(certificate.validFrom)||now>=Date.parse(certificate.validTo))throw new Error('Release signing certificate is not currently valid');

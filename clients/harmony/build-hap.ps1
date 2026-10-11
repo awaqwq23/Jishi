@@ -98,6 +98,7 @@ try {
     $profileChecker = Join-Path $repoRoot 'scripts/check-harmony-profile.mjs'
     if (!(Test-Path -LiteralPath $signTool -PathType Leaf)) { throw 'HarmonyOS SDK HAP signature verifier was not found.' }
     foreach ($output in $outputs) {
+      Write-Host ('Verifying release artifact: ' + $output.Name)
       if ($output.Name -match 'unsigned') { throw 'Release artifact is unsigned; no package was delivered.' }
       $hapToVerify = $output.FullName
       if ($Artifact -eq 'app') {
@@ -105,18 +106,22 @@ try {
         try {
           $hapEntries = @($archive.Entries | Where-Object { $_.FullName -match '\.hap$' })
           if (!$hapEntries.Count) { throw 'Release APP contains no HAP to verify.' }
-          foreach ($hapEntry in $hapEntries) {
-            $hapToVerify = Join-Path $stage ('verify-' + [guid]::NewGuid().ToString('N') + '.hap')
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($hapEntry, $hapToVerify)
-            $verified = & (Join-Path $env:JAVA_HOME 'bin/java.exe') -jar $signTool verify-app -inFile $hapToVerify -outCertChain (Join-Path $stage 'verified-cert.cer') -outProfile (Join-Path $stage 'verified-profile.p7b') 2>&1
-            if ($LASTEXITCODE -ne 0) { throw 'Release APP contains an HAP without a valid signature; no package was delivered.' }
-            & node $profileChecker --profile (Join-Path $stage 'verified-profile.p7b') --certificate (Join-Path $stage 'verified-cert.cer')
-            if ($LASTEXITCODE -ne 0) { throw 'Release APP profile is invalid or lacks agent reminder permission; no package was delivered.' }
-          }
         } finally { $archive.Dispose() }
+        # Hvigor signs the APP container; its digest protects all embedded modules.
+        # Default APP packaging does not retain independent HAP signing blocks.
+        $verified = & (Join-Path $env:JAVA_HOME 'bin/java.exe') -jar $signTool verify-app -inFile $output.FullName -outCertChain (Join-Path $stage 'verified-cert.cer') -outProfile (Join-Path $stage 'verified-profile.p7b') 2>&1
+        if ($LASTEXITCODE -ne 0) {
+          $diagnostic = ($verified | Where-Object { "$_" -match 'ERROR|Error Message:|failed' }) -join ' '
+          throw "Release APP signature verification failed; no package was delivered. $diagnostic"
+        }
+        & node $profileChecker --profile (Join-Path $stage 'verified-profile.p7b') --certificate (Join-Path $stage 'verified-cert.cer')
+        if ($LASTEXITCODE -ne 0) { throw 'Release APP profile is invalid or lacks agent reminder permission; no package was delivered.' }
       } else {
         $verified = & (Join-Path $env:JAVA_HOME 'bin/java.exe') -jar $signTool verify-app -inFile $hapToVerify -outCertChain (Join-Path $stage 'verified-cert.cer') -outProfile (Join-Path $stage 'verified-profile.p7b') 2>&1
-        if ($LASTEXITCODE -ne 0) { throw 'Release HAP signature verification failed; no package was delivered.' }
+        if ($LASTEXITCODE -ne 0) {
+          $diagnostic = ($verified | Where-Object { "$_" -match 'ERROR:|Error Message:' }) -join ' '
+          throw "Release HAP signature verification failed; no package was delivered. $diagnostic"
+        }
         & node $profileChecker --profile (Join-Path $stage 'verified-profile.p7b') --certificate (Join-Path $stage 'verified-cert.cer')
         if ($LASTEXITCODE -ne 0) { throw 'Release HAP profile is invalid or lacks agent reminder permission; no package was delivered.' }
       }
@@ -130,7 +135,7 @@ try {
     Copy-Item -LiteralPath $output.FullName -Destination $target
     Get-FileHash -LiteralPath $target -Algorithm SHA256 | Select-Object Path,Hash
   }
-  if ($BuildMode -eq 'release') { Write-Host 'Release package HAP signature verified. AppGallery review and real-device checks are still required.' }
+  if ($BuildMode -eq 'release') { Write-Host 'Release package signature and Profile verified. AppGallery review and real-device checks are still required.' }
   else { Write-Host "Build stage: $stage"; Write-Host 'Debug artifacts may be unsigned. They cannot be submitted to AppGallery.' }
 } finally {
   # A staged release profile can contain encrypted signing credentials. Never retain it in TEMP.

@@ -1,0 +1,14 @@
+{
+  "version": "0.3.2",
+  "versionCode": 3000002,
+  "bundleName": "cn.jishi.todo",
+  "file": "Jishi-Harmony-0.3.2.app",
+  "size": 451277,
+  "sha256": "1E0A939BF1413D93B31826946270D99A808A8082A98B4C046B3475A92D8F9E2A",
+  "signatureVerified": true,
+  "profileCertificateMatch": true,
+  "agentReminderGranted": true,
+  "storeUploaded": false,
+  "storeSubmitted": false,
+  "realDeviceTested": false
+}
