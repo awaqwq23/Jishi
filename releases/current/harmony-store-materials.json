@@ -1,10 +1,17 @@
 {
   "file": "Jishi-Harmony-Store-Materials.zip",
   "version": "0.3.3",
-  "size": 2572813,
-  "sha256": "9715795C8F830DB5CCB6D8ACBDDC1F96B3E1C5306C108CCAE5747BA5B5ED7DBA",
+  "size": 2573305,
+  "sha256": "361C2DA4B383BC79E4FED1B36F04F20DCD6F7F704F870E8229710C7837511812",
   "files": 16,
   "includesPrivateCredentials": false,
   "policyStatus": "draft",
-  "storeReviewSubmitted": false
+  "storeReviewSubmitted": false,
+  "privacyDraftSaved": true,
+  "ageRatingSaved": true,
+  "ageRating": {
+    "china": "8+",
+    "brazil": "10+",
+    "other": "7+"
+  }
 }
