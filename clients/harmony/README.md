@@ -1,6 +1,6 @@
 # HarmonyOS 客户端
 
-这是独立的 HarmonyOS ArkTS/ArkUI 工程。当前发布候选为 0.3.2（构建号 3000002），新的授权 Profile 已校验、原生调试编译已通过，正式签名因既有 P12 密码不可用而受阻；尚未商店提交。默认连接 `https://jishi.awaqwq233.com/`，连接失败时自动切换到 `https://awaqwq233.com/note/`。最低兼容 API 12，构建配置使用 HarmonyOS 26 SDK。上架文案和真实状态见 [上架材料](store-listing.md)。
+这是独立的 HarmonyOS ArkTS/ArkUI 工程。当前发布候选为 0.3.2（构建号 3000002），授权 Profile 已校验、原生调试编译已通过。经用户明确授权，新发布私钥与 CSR 已生成，密码使用 Windows 当前用户 DPAPI 加密保存；等待华为签发匹配的新发布证书及 Profile，尚未正式签名或商店提交。默认连接 `https://jishi.awaqwq233.com/`，连接失败时自动切换到 `https://awaqwq233.com/note/`。最低兼容 API 12，构建配置使用 HarmonyOS 26 SDK。上架文案和真实状态见 [上架材料](store-listing.md)。
 
 客户端通过限制 HTTPS 主站、备用站来源的 `JishiNative` 代理接入通知授权、即时通知和系统代理定时提醒；禁用文件访问与混合 HTTP 内容。`syncReminders` 同步最近 21 天内最早 30 个提醒，兼容早期支持设备的限制，重新打开或同步时补充。退出账号及进入登录页时清空原账号提醒。系统拒绝代理提醒时，网页明确提示降级为应用内提醒。
 
@@ -24,7 +24,7 @@
 
 ## 上架前仍需完成
 
-只有官方命令行工具时，可执行 `./sign-and-build.ps1`。它用本机密码窗口读取既有 P12 的密码，验证密钥别名，以临时加密配置构建发布 APP；不创建新签名身份、不保存明文密码，成功、失败或取消后都会清理临时签名材料。默认使用 `.local/signing/harmony/jishi-harmony-reminder-candidate.p7b` 和既有发布证书、私钥；可用 `-SdkHome` 与 `-JavaHome` 指定本机工具路径。上传前仍须通过正式 APP 的签名与包内授权门禁。
+只有官方命令行工具时，可执行 `./sign-and-build.ps1`。默认用本机密码窗口读取 P12 密码，也可通过 `-SigningRoot` 指定独立签名材料目录、`-ProtectedPasswordFile` 指定该目录内的 Windows 当前用户 DPAPI 密码文件。密码只用于本次进程；脚本验证密钥别名及证书公钥匹配，以临时加密配置构建发布 APP，结束后清理临时材料。该脚本不生成新身份。目录中必须提供匹配的 `jishi-harmony-release.p12`、`jishi-harmony-release.cer` 与 `jishi-harmony-reminder-candidate.p7b`。可用 `-SdkHome` 与 `-JavaHome` 指定工具路径。DPAPI 文件不能直接迁移到其他 Windows 用户或机器；应保留当前 Windows 用户的恢复能力。上传前仍须通过正式 APP 的签名与包内授权门禁。
 
 - 在开发者本人账号下确认实名认证、应用记录和包名 `cn.jishi.todo`；配置发布证书、Profile 及代理提醒权限。私钥和证书密码不得进入 Git、聊天或发布包。
 - 用签名 HAP 在真实设备验证主站、备用站、断网重试、返回键、通知拒绝/允许、杀进程定时提醒、退出与切换账号后提醒隔离。

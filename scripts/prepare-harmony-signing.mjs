@@ -1,11 +1,11 @@
-import {randomBytes,createCipheriv,pbkdf2Sync} from 'node:crypto';
+import {randomBytes,createCipheriv,pbkdf2Sync,X509Certificate} from 'node:crypto';
 import {mkdir,readFile,writeFile,copyFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 
-// Called only by the local password dialog. Never print passwords or material.
+// Password comes from a local dialog or DPAPI file. Never print secret material.
 const [stage,signingRoot,projectProfile,javaHome]=process.argv.slice(2).map(value=>resolve(value));
 const password=process.env.JISHI_LOCAL_SIGNING_PASSWORD;
 delete process.env.JISHI_LOCAL_SIGNING_PASSWORD;
@@ -16,6 +16,18 @@ const result=spawnSync(join(javaHome,'bin/keytool.exe'),['-list','-keystore',sou
   '-storetype','PKCS12','-alias',keyAlias,'-storepass:env','JISHI_KEY_CHECK_PASSWORD'],
   {env:{...process.env,JISHI_KEY_CHECK_PASSWORD:password},encoding:'utf8',windowsHide:true});
 if(result.status!==0) throw new Error('The existing keystore password or alias was not accepted');
+const exported=spawnSync(join(javaHome,'bin/keytool.exe'),['-exportcert','-keystore',sourceStore,
+  '-storetype','PKCS12','-alias',keyAlias,'-storepass:env','JISHI_KEY_CHECK_PASSWORD'],
+  {env:{...process.env,JISHI_KEY_CHECK_PASSWORD:password},windowsHide:true});
+if(exported.status!==0) throw new Error('Unable to validate the signing public key');
+const signingPublicKey=new X509Certificate(exported.stdout).publicKey.export({type:'spki',format:'der'});
+const certificateBytes=await readFile(join(signingRoot,'jishi-harmony-release.cer'));
+const chain=certificateBytes.toString().match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g)
+  || [certificateBytes];
+if(!chain.some(value=> {
+  const certificate=new X509Certificate(value);
+  return !certificate.ca && certificate.publicKey.export({type:'spki',format:'der'}).equals(signingPublicKey);
+})) throw new Error('The Huawei release certificate does not match the selected private key');
 
 // DevEco/Hvigor AES-GCM material format. Private identity is retained unchanged.
 function encrypt(key,plain) {
@@ -55,4 +67,4 @@ config.app.signingConfigs=[{name:'release',type:'HarmonyOS',material:{
   storePassword:encrypted,keyPassword:encrypted}}];
 config.app.products[0].signingConfig='release';
 await writeFile(join(stage,'signing.json5'),JSON.stringify(config,null,2));
-console.log('Existing release identity validated; temporary encrypted signing configuration prepared.');
+console.log('Selected release identity validated; temporary encrypted signing configuration prepared.');
