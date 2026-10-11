@@ -1,8 +1,8 @@
-# 记时 0.3.2 上架材料
+# 记时 0.3.3 上架材料
 
-构建号：3000002；包名：`cn.jishi.todo`。这是提交准备资料，尚未完成商店审核提交。
+构建号：3000003；包名：`cn.jishi.todo`。这是提交准备资料，尚未完成商店审核提交。新图标为 `releases/current/Jishi-Harmony-Icon-1024.png`；需配套选取 0.3.3 APP，详见 [图标说明](store-icon.md)。
 
-完整交接包为 `releases/current/Jishi-Harmony-Store-Materials.zip`，解压后先打开“鸿蒙上架材料/双击查看上传步骤.html”。包含正式 APP、四张截图、文案、隐私政策草案、分级依据、待完成事项及校验记录；不包含账号密码、证书或私钥。源版说明见 [上传指南](store-upload-guide.md) 和 [待完成事项](store-pending.md)。
+完整交接包为 `releases/current/Jishi-Harmony-Store-Materials.zip`，解压后先打开“鸿蒙上架材料/双击查看上传步骤.html”。包含正式 APP、配套方形图标、四张截图、文案、隐私政策草案、分级依据、待完成事项及校验记录；不包含账号密码、证书或私钥。源版说明见 [上传指南](store-upload-guide.md) 和 [待完成事项](store-pending.md)。
 
 ## 一句话简介
 
@@ -39,12 +39,12 @@
 
 已于 2026-10-11 重新截取待办、日常计划、签到规则和商店四张横向截图，集中在 `clients/harmony/store-screenshots/`。均核验为 1920×1080、16:9、JPEG、小于 5 MB，符合当前 AGC 横向截图尺寸要求。它们是真实共用网页界面，不是鸿蒙真机截图；尚未上传，不能当作商店已经接受或真机提醒已通过的证据。此前 1080×1085 的原始截图仅留作私有过程记录。
 
-已完成 HarmonyOS 26 SDK 原生编译、新证书及 Profile 匹配、正式 APP 签名与官方 SDK 验签。交付文件为 `releases/current/Jishi-Harmony-0.3.2.app`，451277 字节，SHA-256 `1E0A939BF1413D93B31826946270D99A808A8082A98B4C046B3475A92D8F9E2A`。包内 release Profile 与签名证书匹配、代理提醒授权有效；篡改 APP 的负向验证通过。未上传软件包、未提交审核。用户安排在商店可下载后进行真机通知验收，目前不能填报该验收已经通过。
+已完成 HarmonyOS 26 SDK 原生编译、新证书及 Profile 匹配、正式 APP 签名与官方 SDK 验签。交付文件为 `releases/current/Jishi-Harmony-0.3.3.app`，470803 字节，SHA-256 `D5DCF512659A21A11FCCF3FEF87B2782D81B92FCFDFAFA461A54FD539B5813C6`。包内 release Profile 与签名证书匹配、代理提醒授权有效；已提取并核对新图标。旧 0.3.2 与原材料包保留在 `releases/previous/`。新版未上传软件包、未提交审核。用户安排在商店可下载后进行真机通知验收，目前不能填报该验收已经通过。
 
 ## 当前阻碍
 
 现有 P12 密码不可用，原始签名文件完整保留。2026-10-11 用户明确授权创建新签名并加密保存后，已在 Git 忽略的独立目录生成新的加密 P12、CSR，以及 Windows 当前用户 DPAPI 密码文件。用户在华为创建并下载 `Jishi Harmony Release 20261011.cer` 和 `Jishi Harmony Release 0.3.2 NewRelease.p7b`；已核验新私钥、公钥及 Profile 一致，新证书有效至 2029-10-11。旧证书与新私钥、旧 Profile 与新证书均会被拒绝。
 
-发布签名材料已齐全，正式 APP 已生成。用户报告已在 AGC 上传 APP，但本轮没有可用浏览器自动操作接口，尚未独立核验上传成功、版本选取或审核提交。隐私政策草案和内容分级依据见 [隐私与分级材料](store-privacy-and-rating.md)。
+发布签名材料已齐全，正式 APP 已生成。用户曾报告在 AGC 上传旧 0.3.2 APP，新 0.3.3 尚未上传；本轮没有可用浏览器自动操作接口，尚未独立核验后台状态。隐私政策草案和内容分级依据见 [隐私与分级材料](store-privacy-and-rating.md)。
 
 AGC 草稿仍有隐私政策、分级、截图、软件版本等未完成项。负责人手机号已修正为 11 位，短信验证尚未核验完成。浏览器在兑换确认后发生交互故障，部分点击和键盘操作没有触发页面更新；草稿未核验保存成功。已保留页面，后续不得通过刷新该页面丢弃用户填写的资料。

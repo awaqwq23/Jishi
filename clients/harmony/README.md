@@ -1,6 +1,6 @@
 # HarmonyOS 客户端
 
-这是独立的 HarmonyOS ArkTS/ArkUI 工程。当前发布候选为 0.3.2（构建号 3000002），新证书、Profile、代理提醒授权及私钥匹配均已校验。正式签名 APP 已通过官方 SDK 验签，交付于 `releases/current/Jishi-Harmony-0.3.2.app`，尚未上传商店或完成真机验收。默认连接 `https://jishi.awaqwq233.com/`，连接失败时自动切换到 `https://awaqwq233.com/note/`。最低兼容 API 12，构建配置使用 HarmonyOS 26 SDK。上架文案和真实状态见 [上架材料](store-listing.md)。
+这是独立的 HarmonyOS ArkTS/ArkUI 工程。当前发布候选为 0.3.3（构建号 3000003），新证书、Profile、代理提醒授权及私钥匹配均已校验。正式签名 APP 已通过官方 SDK 验签，交付于 `releases/current/Jishi-Harmony-0.3.3.app`，尚未上传商店或完成真机验收。默认连接 `https://jishi.awaqwq233.com/`，连接失败时自动切换到 `https://awaqwq233.com/note/`。最低兼容 API 12，构建配置使用 HarmonyOS 26 SDK。上架文案和真实状态见 [上架材料](store-listing.md)。
 
 客户端通过限制 HTTPS 主站、备用站来源的 `JishiNative` 代理接入通知授权、即时通知和系统代理定时提醒；禁用文件访问与混合 HTTP 内容。`syncReminders` 同步最近 21 天内最早 30 个提醒，兼容早期支持设备的限制，重新打开或同步时补充。退出账号及进入登录页时清空原账号提醒。系统拒绝代理提醒时，网页明确提示降级为应用内提醒。
 

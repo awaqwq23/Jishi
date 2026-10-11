@@ -1,8 +1,9 @@
 {
   "file": "Jishi-Harmony-Store-Materials.zip",
-  "size": 617759,
-  "sha256": "C1F1751B38BFF40F77F607540E62297A8F189FCCD64675140D83EF601864C9CF",
-  "files": 13,
+  "version": "0.3.3",
+  "size": 2572813,
+  "sha256": "9715795C8F830DB5CCB6D8ACBDDC1F96B3E1C5306C108CCAE5747BA5B5ED7DBA",
+  "files": 16,
   "includesPrivateCredentials": false,
   "policyStatus": "draft",
   "storeReviewSubmitted": false

@@ -1,16 +1,17 @@
 {
-  "version": "0.3.2",
-  "versionCode": 3000002,
+  "version": "0.3.3",
+  "versionCode": 3000003,
   "bundleName": "cn.jishi.todo",
-  "file": "Jishi-Harmony-0.3.2.app",
-  "size": 451277,
-  "sha256": "1E0A939BF1413D93B31826946270D99A808A8082A98B4C046B3475A92D8F9E2A",
+  "file": "Jishi-Harmony-0.3.3.app",
+  "size": 470803,
+  "sha256": "D5DCF512659A21A11FCCF3FEF87B2782D81B92FCFDFAFA461A54FD539B5813C6",
   "signatureVerified": true,
   "profileCertificateMatch": true,
   "agentReminderGranted": true,
   "storeUploaded": false,
-  "storeUploadedReportedByUser": true,
-  "statusNotes": "用户报告已上传；storeUploaded 表示是否独立核验，目前未核验包检测或版本选取。",
+  "storeUploadedReportedByUser": false,
   "storeSubmitted": false,
-  "realDeviceTested": false
+  "realDeviceTested": false,
+  "iconFile": "Jishi-Harmony-Icon-1024.png",
+  "iconArtworkMatch": true
 }

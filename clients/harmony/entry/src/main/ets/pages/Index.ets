@@ -115,7 +115,7 @@ struct Index {
         })
         .onControllerAttached(() => {
           const userAgent: string = this.controller.getUserAgent();
-          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.2`);
+          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.3`);
         })
         .onPageBegin(() => {
           this.loadFailed = false;
