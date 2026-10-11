@@ -2,6 +2,8 @@
 
 构建号：3000002；包名：`cn.jishi.todo`。这是提交准备资料，尚未完成商店审核提交。
 
+完整交接包为 `releases/current/Jishi-Harmony-Store-Materials.zip`，解压后先打开“鸿蒙上架材料/双击查看上传步骤.html”。包含正式 APP、四张截图、文案、隐私政策草案、分级依据、待完成事项及校验记录；不包含账号密码、证书或私钥。源版说明见 [上传指南](store-upload-guide.md) 和 [待完成事项](store-pending.md)。
+
 ## 一句话简介
 
 待办习惯打卡，积分奖励自己

@@ -9,6 +9,8 @@
   "profileCertificateMatch": true,
   "agentReminderGranted": true,
   "storeUploaded": false,
+  "storeUploadedReportedByUser": true,
+  "statusNotes": "用户报告已上传；storeUploaded 表示是否独立核验，目前未核验包检测或版本选取。",
   "storeSubmitted": false,
   "realDeviceTested": false
 }
