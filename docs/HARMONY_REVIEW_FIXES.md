@@ -32,3 +32,21 @@
 本地验证：Server TypeScript / Wrangler dry-run 与 11 项测试通过；Web lint、生产构建和 7 项测试通过；Windows 9 项兼容/提醒/下载测试通过；Nginx 修补器 3 项测试通过；全新数据库四步迁移通过。依赖审计无高危/严重项，有 8 项既有中危依赖问题。正式包已构建并签名验证。
 
 当前边界：尚未生产部署、尚未完成鸿蒙真机最近任务列表复测、尚未确认 AGC 新名称与 0.3.4 包替换保存。备案由用户办理，备案材料名称应使用“拾光记事”。
+## Linux 暂存验收与待确认部署
+
+候选发布提交：85ab69b（运行代码修复在 5ab8185）。已推送到 codex/reminders-points-shop。
+独立暂存目录：/opt/jishi-staging。Linux 依赖安装、审计、Server/Web/Windows 回归、完整新数据库迁移、更新清单及运行入口均通过。Linux 与 Windows 重算 Web SHA256 一致：e7c28da6e60fa554bf28534ac3e20d0d981f73b30095cb4770601fc0424bc1fb。
+
+实际合并生产 Nginx 配置后，保留完整 HTTPS / Certbot 段并通过 nginx -t。两个候选配置各修正三个 API/健康代理位置，没有用仓库模板整体覆盖生产配置。
+完整生产 systemd 限制下，以独立数据库副本启动 API/Web/临时 Nginx：合法 HTTPS 来源的注册、登录、bootstrap 成功；攻击者、null 和内部来源返回 JSON 403。旧账号数据读取、新表及 API/Web 健康验证通过。暂存白名单的一次测试配置失配已经修正，最终测试通过；不把前一次失配结果记为成功。
+
+部署尚未执行。准确命令（需用户最终确认）：
+
+```sh
+sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261012-harmony-review
+```
+
+该命令先停止 API/Web 并备份完整代码、数据库、下载清单、秘密配置、systemd 和 Nginx，保存为上述目录内的加密 production.tar.aesgcm，并验证可解密恢复。同步保留 .dev.vars、.env 和持久化数据；仅应用已合并、经哈希校验的 Nginx 配置。预计短暂停机约 1–3 分钟，实际取决于备份与启动速度。失败时自动从本次备份恢复代码、数据库、秘密、服务单元及被修改的 Nginx 配置。
+
+生产成功后还需重新核验主备站注册/登录、审核账号、旧客户端日志、更新清单及数据；通过后才能按项目保留规则清理过期备份和暂存文件。
+当前可连接的 AGC 会话要求重新登录，商店名称、图标、新版包和审核账号尚未替换保存。备案由用户办理；不通过更改主体或单机声明绕过备案。

@@ -97,3 +97,7 @@ Windows 0.4.6 / Android 0.4.7；对应原 Web `web-1eb33d5ff18eb60d`。完整生
 ## 2026-10-12 拾光记事审核修复候选版
 
 四项反馈总结及前三项修复详见 docs/HARMONY_REVIEW_FIXES.md。鸿蒙 0.3.4 已签名验证，名称/图标已同步；注册故障根因已由生产只读探测复现，为 Wrangler 外部 Host 导致 Origin 改写。代码、本地测试和素材已准备，生产部署、真机与 AGC 替换验收尚待完成。独立审核账号仅保留于 .local 私密目录；备案由用户办理。
+
+### Linux 候选验收完成
+
+提交 85ab69b 的运行内容已在 /opt/jishi-staging 验证；完整 systemd 沙箱、复制旧数据、实际暂存代理注册/登录/bootstrap 及恶意来源拒绝均通过。Windows/Linux Web 哈希均为 e7c28da6e60fa554bf28534ac3e20d0d981f73b30095cb4770601fc0424bc1fb。备份拟采用 /var/backups/jishi/previous-20261012-harmony-review，生产部署尚未执行，等待 AGENTS.md 最终明确确认。华为会话需重新登录后替换商店资料；详细命令与回滚在 HARMONY_REVIEW_FIXES.md。

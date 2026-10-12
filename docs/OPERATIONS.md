@@ -48,3 +48,7 @@
 各平台可以独立发布。只更新 Windows 时，使用 `npm run release:manifest -- --keep-android` 继承现有正式 APK；先将原正式清单保留在 `releases/previous/latest.json`。检查会比对留用 APK 的旧版哈希与大小，开发中的安卓源码版本不会被误当作交付版本。Windows 超过 Git 单文件限制时，通过 `releases/current/build.json` 记录经安装验证的构建，GitHub Actions 下载相同产物后校验并发布。
 
 应用市场图标需与应用一致且为合规方形图；现有横幅不能直接替代。正式审核资料和协议需要开发者本人确认。
+
+## API 代理来源保留
+
+Wrangler dev 的 ProxyWorker 会重写与外部 Host 匹配的 URL 类请求头。Nginx 直连 8787 API 时应使用 Host 127.0.0.1:8787，并用 X-Forwarded-Host 保存原站点 Host，保持浏览器 Origin 不变。出现合法子域名登录/注册 JSON 403 时，对比直连 API 与子域名的空登录请求；不能依靠添加内部来源、信任客户端 UA、清空 Origin 或全来源 CORS 放行解决。修改生产 Nginx 必须保留 Certbot 专用段、校验原配置哈希、测试合并候选，并让本次完整备份覆盖修改及回滚。
