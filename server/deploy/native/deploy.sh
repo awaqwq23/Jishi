@@ -32,6 +32,9 @@ test -x "$stage/node_modules/.bin/wrangler"
 test -x /usr/local/bin/node && test -f "$stage/clients/web/server.mjs"
 test -f "$stage/.stage-verified"
 test -f "$stage/.release-commit"
+if test -f "$stage/.nginx-origin-candidates/manifest.json"; then
+  test -f "$stage/.nginx-config-verified"
+fi
 (cd "$stage" && npm run check:updates && npm audit --audit-level=high && node scripts/publish-github-release.mjs --verify)
 for unit in jishi-api jishi-web nginx; do systemctl is-active --quiet "$unit"; done
 nginx -t
@@ -57,6 +60,10 @@ rollback() {
     install -o awaqwq233 -g awaqwq233 -m 0600 "$backup/restore/opt/jishi/server/.dev.vars" /opt/jishi/server/.dev.vars
     install -m 0644 "$backup/restore/etc/systemd/system/jishi-api.service" /etc/systemd/system/jishi-api.service
     install -m 0644 "$backup/restore/etc/systemd/system/jishi-web.service" /etc/systemd/system/jishi-web.service
+    if test -f "$stage/.nginx-origin-candidates/manifest.json"; then
+      python3 "$stage/server/deploy/native/prepare-nginx-origin.py" restore "$stage" --backup "$backup" || exit 98
+      nginx -t && systemctl reload nginx || exit 99
+    fi
     secret_gate || exit 95
     systemctl daemon-reload
   fi
@@ -78,10 +85,16 @@ cmp "$backup/production.tar" "$backup/verified.tar"
 ready=1
 rm -- "$backup/production.tar" "$backup/verified.tar"
 mutated=1
+if test -f "$stage/.nginx-origin-candidates/manifest.json"; then
+  test -f "$stage/.nginx-config-verified"
+  python3 "$stage/server/deploy/native/prepare-nginx-origin.py" apply "$stage"
+  nginx -t
+fi
 rsync -a --delete --chown=awaqwq233:awaqwq233 \
   --include='.env.example' --include='.env.selfhost.example' \
   --exclude='.dev.vars' --exclude='.dev.vars.*' --exclude='.env' --exclude='.env.*' \
   --exclude='.git' --exclude='.wrangler' --exclude='.stage-*' --exclude='.local' \
+  --exclude='.nginx-*' --exclude='.excluded-installers.json' --exclude='.release-commit' --exclude='.source-checks' \
   --exclude='work' --exclude='outputs' "$stage/" /opt/jishi/
 install -m 0644 "$stage/server/deploy/native/jishi-api.service" /etc/systemd/system/jishi-api.service
 install -m 0644 "$stage/server/deploy/native/jishi-web.service" /etc/systemd/system/jishi-web.service

@@ -13,7 +13,7 @@ after(async()=>{await Promise.all([new Promise(resolve=>web.close(resolve)),new 
 test('serves the same application at root and /note with relative assets and PWA metadata',async()=>{
   for(const prefix of ['','/note']) {
     const response=await fetch(base+prefix+'/'); assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/text\/html/);
-    const html=await response.text();assert.match(html,/<title>记时 · 待办<\/title>/);assert.match(html,/正在整理你的今天/);assert.match(html,/manifest.webmanifest/);
+    const html=await response.text();assert.match(html,/<title>拾光记事 · 待办<\/title>/);assert.match(html,/正在整理你的今天/);assert.match(html,/manifest.webmanifest/);
     const script=html.match(/src="([^"]+\.js)"/)[1];const asset=await fetch(new URL(script,base+prefix+'/'));assert.equal(asset.status,200);assert.match(asset.headers.get('content-type'),/javascript/);assert.match(asset.headers.get('cache-control'),/immutable/);
     const head=await fetch(base+prefix+'/favicon.svg',{method:'HEAD'});assert.equal(head.status,200);assert.equal(await head.text(),'');
   }

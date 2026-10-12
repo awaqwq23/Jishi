@@ -142,6 +142,6 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.match(harmonyPage, /javaScriptProxy/);
   assert.match(harmonyPage, /onLoadIntercept/);
   assert.match(harmonyPage, /getRequestUrl\(\)/);
-  assert.match(harmonyPage, /JishiHarmony\/0\.3\.1/);
-  assert.match(harmonyApp, /"versionName": "0\.3\.1"/);
+  assert.ok(harmonyPage.includes(`JishiHarmony/${JSON.parse(harmonyApp).app.versionName}`));
+  assert.equal(JSON.parse(harmonyApp).app.bundleName, "cn.jishi.todo");
 });

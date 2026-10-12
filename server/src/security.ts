@@ -9,8 +9,21 @@ export interface SecurityEnv {
   AUTH_PROXY_SECRET?: string;
 }
 
+function normalizedOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+    return url.origin;
+  } catch { return null; }
+}
+
 export function allowedOrigins(env: SecurityEnv): string[] {
-  return (env.ALLOWED_ORIGINS || "http://localhost:3000").split(",").map(value => value.trim()).filter(Boolean);
+  return (env.ALLOWED_ORIGINS || "http://localhost:3000").split(",").map(value => normalizedOrigin(value.trim())).filter((value): value is string => value !== null);
+}
+
+export function requestOriginAllowed(request: Request, env: SecurityEnv): boolean {
+  const origin = request.headers.get('origin');
+  return Boolean(origin && allowedOrigins(env).includes(normalizedOrigin(origin) || ''));
 }
 
 export function checkRequestOrigin(request: Request, env: SecurityEnv) {
@@ -19,7 +32,7 @@ export function checkRequestOrigin(request: Request, env: SecurityEnv) {
   // Old native clients and command-line clients can omit Origin. Their session
   // cookie is still required; browser cross-origin writes are rejected.
   if (request.headers.get("sec-fetch-site") === "cross-site" && !origin) throw new ApiError(403, "请求来源不受信任");
-  if (origin && !allowedOrigins(env).includes(origin)) throw new ApiError(403, "请求来源不受信任");
+  if (origin && !requestOriginAllowed(request, env)) throw new ApiError(403, "请求来源不受信任");
 }
 
 export async function readBytes(request: Request, limit: number): Promise<Uint8Array> {

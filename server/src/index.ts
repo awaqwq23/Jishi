@@ -1,4 +1,4 @@
-import { ApiError, allowedOrigins, checkRequestOrigin, limitAuth, readBytes, readJson, sameSecret, trustedGateway } from "./security";
+import { ApiError, requestOriginAllowed, checkRequestOrigin, limitAuth, readBytes, readJson, sameSecret, trustedGateway } from "./security";
 import { pointsSchema, pointsAction, pointsState, settlePoints } from "./points";
 
 export interface Env {
@@ -38,9 +38,8 @@ let initialized: Promise<unknown> | null = null;
 
 function corsHeaders(request: Request, env: Env): HeadersInit {
   const origin = request.headers.get("origin") || "";
-  const allowed = allowedOrigins(env);
   return {
-    ...(allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
+    ...(requestOriginAllowed(request, env) ? { "Access-Control-Allow-Origin": origin } : {}),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Access-Control-Allow-Credentials": "true",

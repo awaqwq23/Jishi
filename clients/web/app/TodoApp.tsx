@@ -557,7 +557,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
     }
   }, [initialLogin, login]);
   const submit = (event: React.FormEvent) => { event.preventDefault(); void login(false); };
-  return <main className="signin-screen"><div className="brand-mark">记</div><span className="eyebrow">欢迎来到记时</span><h1>把今天，安放得刚刚好。</h1><p>使用邮箱创建自己的空间，待办、提醒与个人设置会在各端保持一致。</p><form className="auth-form" onSubmit={submit}>{mode === "register" && <label><span>昵称</span><input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" maxLength={24} required placeholder="怎么称呼你" /></label>}<label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required placeholder="name@example.com" /></label><label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required placeholder="至少 8 位" /></label>{mode === "register" && <label><span>确认密码</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required placeholder="请再次输入密码" /></label>}{mode === "login" && <div className="login-options"><label><input type="checkbox" checked={rememberAccount} onChange={(event) => { setRememberAccount(event.target.checked); if (!event.target.checked) { setRememberPassword(false); setAutoLogin(false); } }} /><span>保存账号</span></label><label><input type="checkbox" checked={rememberPassword} onChange={(event) => { setRememberPassword(event.target.checked); if (event.target.checked) setRememberAccount(true); else setAutoLogin(false); }} /><span>保存密码</span></label><label><input type="checkbox" checked={autoLogin} onChange={(event) => { setAutoLogin(event.target.checked); if (event.target.checked) { setRememberAccount(true); setRememberPassword(true); } }} /><span>自动登录</span></label><small>密码只保存在当前设备；公共电脑请勿开启。</small></div>}{message && <div className="auth-error" role="alert">{message}</div>}<button className="button primary" disabled={busy}>{busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}</button></form><button className="auth-switch" disabled={busy} onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setConfirmPassword(""); setMessage(""); }}>{mode === "login" ? "还没有账号？创建一个" : "已有账号？直接登录"}</button></main>;
+  return <main className="signin-screen"><img className="brand-mark" src={withRuntimeBase("/app-icon.png")} alt="" /><span className="eyebrow">欢迎来到拾光记事</span><h1>把今天，安放得刚刚好。</h1><p>使用邮箱创建自己的空间，待办、提醒与个人设置会在各端保持一致。</p><form className="auth-form" onSubmit={submit}>{mode === "register" && <label><span>昵称</span><input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" maxLength={24} required placeholder="怎么称呼你" /></label>}<label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required placeholder="name@example.com" /></label><label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required placeholder="至少 8 位" /></label>{mode === "register" && <label><span>确认密码</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required placeholder="请再次输入密码" /></label>}{mode === "login" && <div className="login-options"><label><input type="checkbox" checked={rememberAccount} onChange={(event) => { setRememberAccount(event.target.checked); if (!event.target.checked) { setRememberPassword(false); setAutoLogin(false); } }} /><span>保存账号</span></label><label><input type="checkbox" checked={rememberPassword} onChange={(event) => { setRememberPassword(event.target.checked); if (event.target.checked) setRememberAccount(true); else setAutoLogin(false); }} /><span>保存密码</span></label><label><input type="checkbox" checked={autoLogin} onChange={(event) => { setAutoLogin(event.target.checked); if (event.target.checked) { setRememberAccount(true); setRememberPassword(true); } }} /><span>自动登录</span></label><small>密码只保存在当前设备；公共电脑请勿开启。</small></div>}{message && <div className="auth-error" role="alert">{message}</div>}<button className="button primary" disabled={busy}>{busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}</button></form><button className="auth-switch" disabled={busy} onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setConfirmPassword(""); setMessage(""); }}>{mode === "login" ? "还没有账号？创建一个" : "已有账号？直接登录"}</button></main>;
 }
 
 export default function TodoApp() {
@@ -619,8 +619,8 @@ export default function TodoApp() {
       const granted = state === "granted";
       localStorage.setItem(NOTIFICATION_KEY, String(granted)); setNotificationEnabled(granted);
       if (!granted) { notificationHistory.current.clear(); writeNotificationHistory(notificationHistory.current); }
-      setNotice(granted ? "系统通知权限已开启" : "系统通知权限未开启，请在手机设置中允许记时发送通知");
-      if (granted) void showDeviceNotification("记时提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
+      setNotice(granted ? "系统通知权限已开启" : "系统通知权限未开启，请在手机设置中允许拾光记事发送通知");
+      if (granted) void showDeviceNotification("拾光记事提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
       window.setTimeout(() => setNotice(""), 2600);
     };
     window.addEventListener("jishi-native-notification-permission", receiveNativePermission);
@@ -639,7 +639,7 @@ export default function TodoApp() {
       data.todos.filter((todo) => todo.status === "active" && todo.deadline).forEach((todo) => {
         const deadline = new Date(todo.deadline!).getTime();
         if (!Number.isFinite(deadline)) return;
-        if (deadline <= now) { sendOnce(`todo:${todo.id}:deadline:${deadline}`, `待办已逾期：${todo.title}`, "它还没有完成，点此回到记时。"); return; }
+        if (deadline <= now) { sendOnce(`todo:${todo.id}:deadline:${deadline}`, `待办已逾期：${todo.title}`, "它还没有完成，点此回到拾光记事。"); return; }
         const reachedOffset = todo.reminderOffsets.map((minutes) => ({ minutes, moment: deadline - minutes * 60_000 })).filter((entry) => entry.moment <= now).sort((a, b) => b.moment - a.moment)[0];
         if (reachedOffset) sendOnce(`todo:${todo.id}:reminder:${reachedOffset.moment}`, todo.title, `${dateTime(todo.deadline)} 截止`);
       });
@@ -721,7 +721,7 @@ export default function TodoApp() {
     if (native?.requestNotificationPermission) {
       const permission = await native.requestNotificationPermission();
       if (permission === "granted" || permission === "denied") window.dispatchEvent(new CustomEvent("jishi-native-notification-permission", { detail: permission }));
-      else flash("请在系统提示中允许记时发送通知");
+      else flash("请在系统提示中允许拾光记事发送通知");
       return;
     }
     if (!("Notification" in window)) {
@@ -730,14 +730,14 @@ export default function TodoApp() {
     }
     const permission = native ? "granted" : Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
     if (permission === "granted") {
-      await showDeviceNotification("记时提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
+      await showDeviceNotification("拾光记事提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
       localStorage.setItem(NOTIFICATION_KEY, "true"); setNotificationEnabled(true);
       flash("提醒已开启，并已发送一条测试通知");
     } else flash("提醒未开启：请在系统设置中允许此应用发送通知");
   };
   const testNotifications = async () => {
     if (!notificationEnabled) { await toggleNotifications(); return; }
-    const message = { title: "记时测试提醒", body: "弹窗和系统通知均已成功连接。" };
+    const message = { title: "拾光记事测试提醒", body: "弹窗和系统通知均已成功连接。" };
     setReminderNotice(message);
     if (notificationsSupported()) {
       try { await showDeviceNotification(message.title, message.body, `test:${Date.now()}`); flash("测试弹窗和系统通知已发送"); }
@@ -822,7 +822,7 @@ export default function TodoApp() {
   const todayLabel = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(new Date());
   return <div className={`app-shell acrylic-${settings.acrylic} ${settings.backgroundUrl ? "has-custom-background" : ""} ${settings.backgroundAcrylic ? "background-acrylic" : ""}`} style={{ "--accent": settings.accent, "--card-opacity": settings.cardOpacity / 100, "--background-opacity": settings.backgroundOpacity / 100, "--background-overlay": (100 - settings.backgroundOpacity) / 100, "--app-background-image": settings.backgroundUrl ? `url(${settings.backgroundUrl})` : "none" } as React.CSSProperties}>
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark small">记</span><div><strong>记时</strong><small>把今天安放好</small></div></div>
+      <div className="brand"><img className="brand-mark small" src={withRuntimeBase("/app-icon.png")} alt="" /><div><strong>拾光记事</strong><small>把今天安放好</small></div></div>
       <nav className="side-nav" aria-label="主导航"><button className={section === "points" ? "active" : ""} onClick={() => setSection("points")}><Check size={19} /><span>打卡 · 商店</span></button><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
       <div className="sidebar-groups"><span>快捷查看</span><button onClick={() => { setSection("todos"); setStatusFilter("completed"); }}><Check size={17} />已完成</button><button onClick={() => setSection("trash")}><Trash2 size={17} />回收站</button><button onClick={() => setSection("settings")}><Settings size={17} />设置</button></div>
       <div className="sidebar-profile"><span className="avatar">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="38px" unoptimized /> : <DefaultAvatar />}</span><div><strong>{data.user.name}</strong><small>已同步</small></div><ChevronRight size={17} /></div>
@@ -845,7 +845,7 @@ export default function TodoApp() {
 
     <nav className="bottom-nav module-nav" aria-label="移动端主导航"><button className={section === "points" ? "active" : ""} onClick={() => setSection("points")}><Check size={19} /><span>积分</span></button><button className={section === "todos" || section === "trash" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={20} /><span>待办</span></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={20} /><span>定期</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={20} /><span>日记</span></button><button className={section === "mine" || section === "settings" ? "active" : ""} onClick={() => setSection("mine")}><UserRound size={20} /><span>我的</span></button></nav>
     {editor && <TodoEditor initial={editor === "new" ? undefined : editor} categories={data.categories} presets={data.reminderPresets} onClose={() => setEditor(null)} onSave={(value) => void saveTodo(value)} saving={saving} />}
-    {reminderNotice && <section className="reminder-popup" role="alertdialog" aria-live="assertive" aria-label="记时提醒"><span className="reminder-popup-icon"><Bell size={21} /></span><div><strong>{reminderNotice.title}</strong><p>{reminderNotice.body}</p></div><button className="icon-button" onClick={() => setReminderNotice(null)} aria-label="关闭提醒弹窗"><X size={18} /></button></section>}
+    {reminderNotice && <section className="reminder-popup" role="alertdialog" aria-live="assertive" aria-label="拾光记事提醒"><span className="reminder-popup-icon"><Bell size={21} /></span><div><strong>{reminderNotice.title}</strong><p>{reminderNotice.body}</p></div><button className="icon-button" onClick={() => setReminderNotice(null)} aria-label="关闭提醒弹窗"><X size={18} /></button></section>}
     {notice && <div className="toast"><Check size={17} />{notice}</div>}{error && <div className="error-toast"><span>{error}</span><button onClick={() => setError("")} aria-label="关闭错误"><X size={16} /></button></div>}
   </div>;
 }
@@ -888,7 +888,7 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
   const notificationDescription = /JishiWindows\//i.test(agent)
     ? "Windows 提醒开启后自动随系统登录在后台运行，无需打开窗口；关闭窗口保留提醒，托盘退出会暂停提醒。"
     : /JishiAndroid\//i.test(agent)
-      ? "Android 会申请通知与精确定时权限；退出记时后仍由系统到点通知"
+      ? "Android 会申请通知与精确定时权限；退出拾光记事后仍由系统到点通知"
       : /JishiHarmony\//i.test(agent)
         ? "鸿蒙需允许消息通知，并安装已获华为代理提醒授权的签名版本，才能在应用关闭后由系统到点通知"
         : nativeNotifications ? "手机客户端可在后台保持定时提醒" : "网页版打开时会显示应用内弹窗，并尝试发送浏览器系统通知";
@@ -933,7 +933,7 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
   const cropModal = cropTarget && <ImageCropper file={cropTarget.file} kind={cropTarget.kind} onCancel={() => setCropTarget(null)} onConfirm={uploadCropped} />;
 
   if (section === "mine") return <><div className="profile-page"><header className="topbar"><div><span className="eyebrow">个人中心</span><h1>我的</h1></div></header><section className="profile-hero"><label className="avatar large" aria-label="更换头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="80px" unoptimized /> : <DefaultAvatar size={38} />}<input aria-label="选择头像图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /><span><ImagePlus size={15} /></span></label><div><h2>{data.user.name}</h2><p>{data.user.email}</p><span className="sync-badge"><Check size={14} />云端同步正常</span></div></section><section className="quick-grid"><button onClick={() => onSection("settings")}><span><Palette size={20} /></span><div><strong>外观与设置</strong><small>主题、卡片与提醒</small></div><ChevronRight size={18} /></button><button onClick={() => onSection("trash")}><span><ArchiveRestore size={20} /></span><div><strong>回收站</strong><small>{data.todos.filter((todo) => todo.status === "deleted").length} 个待办</small></div><ChevronRight size={18} /></button></section><section className="insight-card"><span className="eyebrow">本周小结</span><div><strong>{data.todos.filter((todo) => todo.status === "completed").length}</strong><p>件事情已经妥善完成。保持自己的节奏，就很好。</p></div></section><button className="button secondary signout" onClick={async () => { const saved = readDeviceLogin(); await api("/api/auth/logout", { method: "POST" }); clearNativeReminders(); writeDeviceLogin({ ...saved, password: "", rememberPassword: false, autoLogin: false }); window.location.reload(); }}>退出当前账号</button></div>{cropModal}</>;
-  return <><div className="settings-page"><header className="topbar"><div><span className="eyebrow">只属于你的记时</span><h1>设置</h1></div></header>
+  return <><div className="settings-page"><header className="topbar"><div><span className="eyebrow">只属于你的拾光记事</span><h1>设置</h1></div></header>
     <section className="settings-card"><div className="settings-title"><UserRound size={20} /><div><h2>个人资料</h2><p>默认头像会自动显示，也可以裁选图片并上传到服务器</p></div></div><div className="profile-settings-row"><label className="avatar settings-avatar" aria-label="上传自定义头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="52px" unoptimized /> : <DefaultAvatar size={27} />}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /></label><div className="inline-form"><input value={name} maxLength={24} onChange={(event) => setName(event.target.value)} /><button className="button primary" onClick={() => void onSaveProfile({ name })}>保存姓名</button></div></div></section>
     <section className="settings-card"><div className="settings-title"><CircleUserRound size={20} /><div><h2>当前设备登录</h2><p>账号与密码设置只保存在当前设备，不同步到服务器</p></div></div><div className="setting-line"><div><strong>保存账号</strong><small>{deviceLogin.rememberAccount ? deviceLogin.email || data.user.email : "未保存"}</small></div><button role="switch" aria-checked={deviceLogin.rememberAccount} className={`switch ${deviceLogin.rememberAccount ? "on" : ""}`} onClick={() => updateDeviceLogin(deviceLogin.rememberAccount ? { rememberAccount: false } : { rememberAccount: true, email: data.user.email })}><span /></button></div><div className="setting-line"><div><strong>保存密码</strong><small>{deviceLogin.rememberPassword ? "已保存，可在登录页修改" : "请在下次登录时勾选保存密码"}</small></div><span className="setting-status">{deviceLogin.rememberPassword ? "已保存" : "未保存"}</span></div><div className="setting-line"><div><strong>自动登录</strong><small>启动应用时使用当前设备保存的凭据登录</small></div><button role="switch" aria-checked={deviceLogin.autoLogin} disabled={!deviceLogin.rememberPassword} className={`switch ${deviceLogin.autoLogin ? "on" : ""}`} onClick={() => updateDeviceLogin({ autoLogin: !deviceLogin.autoLogin })}><span /></button></div>{deviceLogin.rememberPassword && <button className="button secondary clear-login" onClick={() => updateDeviceLogin({ rememberAccount: false })}>清除本机保存的登录信息</button>}</section>
     <section className="settings-card">

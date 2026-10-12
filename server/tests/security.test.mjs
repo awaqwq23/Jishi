@@ -170,3 +170,23 @@ test("a failed multi-batch-size import preserves the original partition", async 
   const data = await json(await call("/api/bootstrap",{cookie:alice.cookie}),200);
   assert.equal(data.diaryEntries.length,1); assert.equal(data.diaryEntries[0].content,"Alice diary");
 });
+
+test('equivalent HTTPS origins work and URL-shaped origin attacks remain rejected', async () => {
+  const headers={Origin:`${origin}:443`,'Content-Type':'application/json'};
+  const response=await call('/api/auth/login',{method:'POST',body:{email:alice.email,password:alice.password},headers});
+  await json(response,200);
+  assert.equal(response.headers.get('access-control-allow-origin'),headers.Origin);
+  for(const bad of [`${origin}/path`,`${origin}?query=1`,'https://jishi.example.test.attacker.test','https://attacker.test','https://user:password@jishi.example.test']) {
+    await json(await call('/api/auth/login',{method:'POST',body:{},headers:{Origin:bad,Referer:origin+'/','X-Jishi-Client':'web'}}),403);
+  }
+});
+
+test('proxy transport origins and opaque origins never bypass the browser origin guard', async () => {
+  for(const invalid of ['http://127.0.0.1:8787','http://localhost:8787','null']) {
+    const headers={Origin:invalid,Referer:origin+'/','X-Jishi-Client':'web','User-Agent':'JishiHarmony/0.3.4'};
+    const response=await call('/api/auth/login',{method:'POST',body:{},headers});
+    await json(response,403);
+    assert.equal(response.headers.get('access-control-allow-origin'),null);
+  }
+  await json(await call('/api/auth/login',{method:'POST',body:{},headers:{'Sec-Fetch-Site':'cross-site',Referer:origin+'/','X-Jishi-Client':'web'}}),403);
+});

@@ -1,6 +1,6 @@
 {
-  "name": "记时 · 待办与提醒",
-  "short_name": "记时",
+  "name": "拾光记事 · 待办与提醒",
+  "short_name": "拾光记事",
   "description": "跨设备同步的待办事项与提醒工具",
   "start_url": "./",
   "scope": "./",
@@ -9,6 +9,6 @@
   "theme_color": "#d96f4b",
   "lang": "zh-CN",
   "icons": [
-    { "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "./app-icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" }
   ]
 }

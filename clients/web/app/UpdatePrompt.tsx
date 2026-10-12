@@ -108,7 +108,7 @@ export default function UpdatePrompt() {
     const version = navigator.userAgent.match(/JishiWindows\/([0-9]+(?:\.[0-9]+){1,3})/i)?.[1];
     if (!version) return;
     const previousTitle = document.title;
-    document.title = `记时 v${version}`;
+    document.title = `拾光记事 v${version}`;
     return () => { document.title = previousTitle; };
   }, []);
 
@@ -238,7 +238,7 @@ export default function UpdatePrompt() {
     }
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename;
     document.body.appendChild(anchor); anchor.click(); anchor.remove();
-    setDownloadState({ status: "background", receivedBytes: 0, totalBytes: prompt.release.size, bytesPerSecond: 0, percent: 0, etaSeconds: null, filename, message: "已交给手机系统下载；关闭记时不会中断，请在通知栏查看进度" });
+    setDownloadState({ status: "background", receivedBytes: 0, totalBytes: prompt.release.size, bytesPerSecond: 0, percent: 0, etaSeconds: null, filename, message: "已交给手机系统下载；关闭拾光记事不会中断，请在通知栏查看进度" });
   };
 
   const platformName = prompt.identity.platform === "windows" ? "Windows" : prompt.identity.platform === "android" ? "Android" : "应用";

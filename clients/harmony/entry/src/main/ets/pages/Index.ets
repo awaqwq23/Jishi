@@ -115,7 +115,7 @@ struct Index {
         })
         .onControllerAttached(() => {
           const userAgent: string = this.controller.getUserAgent();
-          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.3`);
+          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.4`);
         })
         .onPageBegin(() => {
           this.loadFailed = false;
@@ -140,7 +140,7 @@ struct Index {
 
       if (this.loadFailed) {
         Column({ space: 16 }) {
-          Text('暂时无法连接记时')
+          Text('暂时无法连接拾光记事')
             .fontSize(24)
             .fontWeight(FontWeight.Bold)
             .fontColor('#45433f')

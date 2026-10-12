@@ -5,7 +5,6 @@
   "size": 1933197,
   "opaque": true,
   "sha256": "D3F4D033CED577801038BA5AD482AA40EEB744ACE33DBBA1309BA112B57D2AF0",
-  "packageVersion": "0.3.3",
   "sourceIconByteIdentical": true,
   "compiledResource": "resources/base/media/app_icon.png",
   "compiledResourceWidth": 512,
@@ -14,5 +13,7 @@
   "compiledIconSameArtwork": true,
   "resizedMeanAbsoluteChannelDifference": 1.0873654683430989,
   "resizedPsnrDb": 43.56970153060217,
-  "storeApproved": false
+  "storeApproved": false,
+  "appName": "拾光记事",
+  "packageVersion": "0.3.4"
 }
