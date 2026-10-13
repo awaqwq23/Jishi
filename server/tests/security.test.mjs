@@ -33,6 +33,20 @@ before(async () => {
 });
 after(async () => { await runtime?.dispose(); });
 
+test('offline creation retries keep stable IDs, ownership and conditional edits', async () => {
+  const id = randomUUID();
+  const created = await json(await call('/api/todos', { cookie: alice.cookie, method: 'POST', headers: { 'X-Jishi-Create-Id': id }, body: { title: 'Offline creation' } }), 201);
+  assert.equal(created.todo.id, id);
+  const retried = await json(await call('/api/todos', { cookie: alice.cookie, method: 'POST', headers: { 'X-Jishi-Create-Id': id }, body: { title: 'Offline creation' } }), 200);
+  assert.equal(retried.todo.id, id);
+  await json(await call('/api/todos', { cookie: bob.cookie, method: 'POST', headers: { 'X-Jishi-Create-Id': id }, body: { title: 'Wrong owner' } }), 409);
+  await json(await call(`/api/todos/${id}`, { cookie: alice.cookie, method: 'PATCH', headers: { 'If-Match': 'outdated' }, body: { title: 'Must not overwrite' } }), 409);
+  const changed = await json(await call(`/api/todos/${id}`, { cookie: alice.cookie, method: 'PATCH', headers: { 'If-Match': retried.todo.updatedAt }, body: { title: 'Synchronized' } }), 200);
+  assert.equal(changed.todo.title, 'Synchronized');
+  const data = await json(await call('/api/bootstrap', { cookie: alice.cookie }), 200);
+  assert.equal(data.todos.filter(x => x.id === id).length, 1);
+});
+
 test('check-in, custom rules, shop and redeemed balance survive a server restart', async () => {
   const folder=await mkdtemp(join(tmpdir(),'jishi-persistence-'));
   const options=convertV4MiniflareOptions({modules:true,scriptPath:fileURLToPath(new URL('../.wrangler/dry-run/index.js',import.meta.url)),compatibilityDate:'2026-05-22',d1Databases:['DB'],resourcePersistencePath:folder,r2Buckets:['MEDIA'],bindings:{AUTH_SECRET:secret,ALLOWED_ORIGINS:origin},log:new Log(LogLevel.NONE)});

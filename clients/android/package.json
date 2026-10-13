@@ -1,11 +1,12 @@
 {
   "name": "@jishi/android",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "private": true,
   "scripts": {
     "sync": "cap sync android",
     "open": "cap open android",
-    "build": "cap sync android && cd android && gradlew.bat assembleDebug"
+    "build": "cap sync android && cd android && gradlew.bat assembleDebug",
+    "prebuild": "node ../../scripts/prepare-offline-shell.mjs android"
   },
   "dependencies": {
     "@capacitor/android": "7.6.9",

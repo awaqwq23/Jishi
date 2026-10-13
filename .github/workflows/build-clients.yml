@@ -27,7 +27,7 @@ jobs:
           $installDirectory = Join-Path $env:RUNNER_TEMP 'jishi-installed-smoke'
           $process = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDirectory" -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw 'Installer failed' }
-          node scripts/smoke-windows.cjs (Join-Path $installDirectory '记时.exe')
+          node scripts/smoke-windows.cjs (Join-Path $installDirectory '拾光记事.exe')
           if ($LASTEXITCODE -ne 0) { throw 'Installed application smoke failed' }
       - uses: actions/upload-artifact@v4
         with:
@@ -50,6 +50,7 @@ jobs:
           java-version: 21
       - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high
+      - run: node scripts/prepare-offline-shell.mjs android
       - run: npm run sync --workspace @jishi/android
       - working-directory: clients/android/android
         run: bash gradlew assembleRelease --no-daemon

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, ipcMain, Menu, net, Notification, shell, Tray } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, net, Notification, session, shell, Tray } = require("electron");
+const { installOfflineShell } = require('./offline-shell.cjs');
 const path = require("node:path");
 const config = require(path.join(__dirname, "app-config.json"));
 const { resolveAppUrl, uniqueUrls } = require(path.join(__dirname, "host-resolver.cjs"));
@@ -50,7 +51,7 @@ function parseTrustedUpdate(payload) {
 function createWindow(appUrl) {
   const window = new BrowserWindow({
     width: 1180, height: 780, minWidth: 760, minHeight: 560,
-    backgroundColor: "#f4f0e8", title: "记时",
+    backgroundColor: "#f4f0e8", title: "拾光记事",
     autoHideMenuBar: true,
     show: !backgroundLaunch,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") },
@@ -80,11 +81,11 @@ function createWindow(appUrl) {
 async function installTray() {
   const icon = await app.getFileIcon(process.execPath, { size: "small" });
   tray = new Tray(icon);
-  tray.setToolTip("记时 · 提醒在后台运行");
+  tray.setToolTip("拾光记事 · 提醒在后台运行");
   const showWindow = () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } };
   tray.on("click", showWindow);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "打开记时", click: showWindow },
+    { label: "打开拾光记事", click: showWindow },
     { type: "separator" },
     { label: "退出", click: () => {
       if (updateDownloader?.isActive()) {
@@ -99,16 +100,12 @@ async function installTray() {
 
 async function openWindow() {
   try {
-    const appUrl = await resolveAppUrl(APP_URLS, net.fetch);
+    const appUrl = await resolveAppUrl(APP_URLS, net.fetch, 1500);
     if (SMOKE_TEST) { console.log(`JISHI_RESOLVED_URL=${appUrl}`); app.quit(); return; }
     createWindow(appUrl);
   } catch (error) {
     if (SMOKE_TEST) { console.error(error); app.exit(1); return; }
-    const window = new BrowserWindow({ width: 720, height: 480, show: !backgroundLaunch, backgroundColor: "#f4f0e8", title: "记时" });
-    mainWindow = window;
-    window.on('close', event => { if (!isQuitting && tray) { event.preventDefault(); window.hide(); } });
-    const message = encodeURIComponent("记时服务器暂时无法连接，请检查网络后重新打开应用。");
-    void window.loadURL(`data:text/html;charset=utf-8,<meta charset=utf-8><title>记时</title><style>body{font-family:sans-serif;background:%23f4f0e8;color:%2345433f;display:grid;place-content:center;height:100vh;margin:0;text-align:center}h1{font-size:28px}p{color:%23736d64}</style><h1>暂时无法连接</h1><p>${message}</p>`);
+    createWindow(APP_URLS[0]);
   }
 }
 
@@ -131,6 +128,7 @@ ipcMain.handle("jishi:update-download-start", (event, payload) => {
 });
 
 app.whenReady().then(async () => {
+  if (!SMOKE_TEST) installOfflineShell(session.defaultSession, APP_ORIGINS);
   if (!SMOKE_TEST) {
     reminderStore = createReminderStore({ file: path.join(app.getPath('userData'), 'reminders.json'), notify: item => showNativeNotification(mainWindow, item.title, item.body) });
     reminderStore.restore();

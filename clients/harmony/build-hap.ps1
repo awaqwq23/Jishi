@@ -65,6 +65,16 @@ try {
   foreach ($name in @('src','build-profile.json5','oh-package.json5','hvigorfile.ts')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "entry/$name") -Destination (Join-Path $stage 'entry') -Recurse
   }
+  # Ship a complete local shell under the trusted HTTPS origin for first-launch
+  # offline access. API requests remain network requests and retain Origin checks.
+  Push-Location -LiteralPath $repoRoot
+  try { & npm run build:web; if ($LASTEXITCODE -ne 0) { throw 'Offline Web shell build failed.' } }
+  finally { Pop-Location }
+  $offlineShell = Join-Path $stage 'entry/src/main/resources/rawfile/offline-shell'
+  New-Item -ItemType Directory -Path $offlineShell -Force | Out-Null
+  foreach ($name in @('index.html','assets','app-icon.png','favicon.svg','manifest.webmanifest')) {
+    Copy-Item -LiteralPath (Join-Path $repoRoot "clients/web/dist/$name") -Destination $offlineShell -Recurse
+  }
   if ($hvigor.EndsWith('.js')) {
     $env:NODE_PATH = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $hvigor)))
   }

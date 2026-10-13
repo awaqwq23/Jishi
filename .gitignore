@@ -72,3 +72,6 @@ yarn-error.log*
 /clients/harmony/signing.local.json5
 /clients/harmony/entry/build/
 /clients/harmony/build/
+/clients/windows/offline-shell/
+/clients/android/www/offline-shell/
+/clients/android/android/app/src/main/assets/public/offline-shell/

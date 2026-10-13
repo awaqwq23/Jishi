@@ -47,6 +47,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getBridge().getWebView().setWebViewClient(new OfflineWebViewClient(getBridge()));
         NotificationScheduler.restore(this);
         updateDownloads = new UpdateDownloadController(this);
         getBridge().getWebView().addJavascriptInterface(new JishiNativeBridge(), "JishiNative");

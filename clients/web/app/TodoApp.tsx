@@ -10,6 +10,7 @@ import Image from "./Image";
 import PointsBoard, { type PointsData } from "./PointsBoard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, withRuntimeBase } from "./runtime-path";
+import { offlineRequest, reconnect, exportLocalBackup } from './offline.mjs';
 
 type Priority = "low" | "normal" | "important" | "urgent";
 type TodoStatus = "active" | "completed" | "deleted";
@@ -225,10 +226,13 @@ function toInputDate(value: string | null) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(apiUrl(url), { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
+  return await offlineRequest(url, init, networkApi) as T;
+}
+async function networkApi(url: string, init?: RequestInit): Promise<unknown> {
+  const response = await fetch(apiUrl(url), { ...init, signal: init?.signal || AbortSignal.timeout(6000), credentials: "include", headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
+  const data = await response.json().catch(() => { throw Object.assign(new Error('服务器暂时无法连接，已切换本机使用'), { status: 502 }); });
   if (!response.ok) throw Object.assign(new Error(data.error || "操作没有完成，请稍后重试"), { status: response.status });
-  return data as T;
+  return data;
 }
 
 function DefaultAvatar({ size = 22 }: { size?: number }) {
@@ -545,7 +549,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
         rememberPassword: rememberPassword || autoLogin,
         autoLogin,
         email: rememberAccount || rememberPassword || autoLogin ? email : "",
-        password: rememberPassword || autoLogin ? password : "",
+        password: "",
       });
       await onAuthenticated();
     } catch (err) { setMessage(`${automatic ? "自动登录失败：" : ""}${err instanceof Error ? err.message : "登录失败，请稍后重试"}`); }
@@ -562,6 +566,18 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
 
 export default function TodoApp() {
   const [data, setData] = useState<Bootstrap | null>(null);
+  const [syncStatus, setSyncStatus] = useState({ offline: false, pending: 0, issue: '' });
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const detail = (event as CustomEvent<{ data: Bootstrap | null; status: typeof syncStatus }>).detail;
+      if (detail.data) setData({ ...detail.data, user: { ...detail.data.user, settings: readLocalAppearance(detail.data.user.id, detail.data.user.settings) } });
+      setSyncStatus(detail.status);
+    };
+    const retry = () => void reconnect();
+    window.addEventListener('jishi-local-data', receive); window.addEventListener('online', retry); window.addEventListener('focus', retry);
+    const timer = window.setInterval(retry, 30000);
+    return () => { window.removeEventListener('jishi-local-data', receive); window.removeEventListener('online', retry); window.removeEventListener('focus', retry); window.clearInterval(timer); };
+  }, []);
   const [section, setSection] = useState<Section>("todos");
   const [statusFilter, setStatusFilter] = useState<"active" | "completed">("active");
   const [query, setQuery] = useState(""); const [categoryFilter, setCategoryFilter] = useState("");
@@ -813,7 +829,7 @@ export default function TodoApp() {
     await writeLocalBackground(data.user.id, null); replaceBackgroundObjectUrl(null); flash("本机背景已移除");
   };
 
-  if (!data && error.includes("登录")) return <AuthScreen onAuthenticated={load} />;
+  if (!data && error) return <AuthScreen onAuthenticated={load} />;
   if (!data) return <main className="loading-screen"><div className="brand-mark pulse">记</div><p>{error || "正在整理你的今天…"}</p>{error && <button className="button secondary" onClick={() => void load()}>重新连接</button>}</main>;
 
   const categoryMap = new Map(data.categories.map((item) => [item.id, item]));
@@ -825,10 +841,11 @@ export default function TodoApp() {
       <div className="brand"><img className="brand-mark small" src={withRuntimeBase("/app-icon.png")} alt="" /><div><strong>拾光记事</strong><small>把今天安放好</small></div></div>
       <nav className="side-nav" aria-label="主导航"><button className={section === "points" ? "active" : ""} onClick={() => setSection("points")}><Check size={19} /><span>打卡 · 商店</span></button><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
       <div className="sidebar-groups"><span>快捷查看</span><button onClick={() => { setSection("todos"); setStatusFilter("completed"); }}><Check size={17} />已完成</button><button onClick={() => setSection("trash")}><Trash2 size={17} />回收站</button><button onClick={() => setSection("settings")}><Settings size={17} />设置</button></div>
-      <div className="sidebar-profile"><span className="avatar">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="38px" unoptimized /> : <DefaultAvatar />}</span><div><strong>{data.user.name}</strong><small>已同步</small></div><ChevronRight size={17} /></div>
+      <div className="sidebar-profile"><span className="avatar">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="38px" unoptimized /> : <DefaultAvatar />}</span><div><strong>{data.user.name}</strong><small>{syncStatus.offline ? "本机保存" : syncStatus.pending ? "等待同步" : syncStatus.issue ? "同步暂停" : "已同步"}</small></div><ChevronRight size={17} /></div>
     </aside>
 
     <main className="main-surface">
+      {(syncStatus.offline || syncStatus.pending || syncStatus.issue) && <div className="offline-status" role="status"><span>{syncStatus.issue || `${syncStatus.offline ? '离线使用 · 内容保存在本机' : '正在同步'}${syncStatus.pending ? ` · ${syncStatus.pending} 项待同步` : ''}`}</span><button className="text-button" onClick={exportLocalBackup}>备份本机内容</button><button className="text-button" onClick={() => void reconnect()}>重试同步</button></div>}
       {(section === "todos" || section === "trash") && <>
         <header className="topbar"><div><span className="eyebrow">{section === "trash" ? "30 天内可恢复" : todayLabel}</span><h1>{section === "trash" ? "回收站" : statusFilter === "active" ? "今天，先做什么？" : "完成记录"}</h1></div><div className="top-actions"><button className="icon-button mobile-menu" aria-label="打开待办快捷菜单" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((value) => !value)}><Menu size={21} /></button>{mobileMenuOpen && <div className="mobile-quick-menu" role="menu"><button role="menuitem" onClick={() => { setSection("todos"); setStatusFilter("active"); setMobileMenuOpen(false); }}><LayoutList size={16} />未完成待办</button><button role="menuitem" onClick={() => { setSection("todos"); setStatusFilter("completed"); setMobileMenuOpen(false); }}><Check size={16} />已完成待办</button><button role="menuitem" onClick={() => { setSection("trash"); setMobileMenuOpen(false); }}><Trash2 size={16} />回收站</button><button role="menuitem" onClick={() => { setSection("settings"); setMobileMenuOpen(false); }}><Settings size={16} />设置</button></div>}<button className={`button notification-button ${notificationEnabled ? "enabled" : ""}`} aria-pressed={notificationEnabled} title={notificationEnabled ? "关闭本设备的消息栏提醒" : "开启本设备的消息栏提醒"} onClick={() => void toggleNotifications().catch((reason) => { setError(reason instanceof Error ? reason.message : "通知开启失败"); })}><Bell size={18} /><span>{notificationEnabled ? "提醒已开" : "提醒已关"}</span></button>{section !== "trash" && <button className="button primary" onClick={() => setEditor("new")}><Plus size={19} />新建待办</button>}</div></header>
         {section !== "trash" && <div className="status-tabs"><button className={statusFilter === "active" ? "active" : ""} onClick={() => setStatusFilter("active")}>未完成 <span>{activeCount}</span></button><button className={statusFilter === "completed" ? "active" : ""} onClick={() => setStatusFilter("completed")}>已完成 <span>{data.todos.filter((todo) => todo.status === "completed").length}</span></button></div>}

@@ -1,0 +1,11 @@
+import { cp, mkdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+const root = fileURLToPath(new URL('../', import.meta.url));
+const platform = process.argv[2];
+if (!['windows', 'android'].includes(platform)) throw new Error('Unsupported offline shell target');
+execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:web'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+const target = join(root, platform === 'windows' ? 'clients/windows/offline-shell' : 'clients/android/www/offline-shell');
+await mkdir(target, { recursive: true });
+for (const name of ['index.html', 'assets', 'app-icon.png', 'favicon.svg', 'manifest.webmanifest']) await cp(join(root, 'clients/web/dist', name), join(target, name), { recursive: true });

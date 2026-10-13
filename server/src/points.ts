@@ -88,15 +88,24 @@ export async function pointsAction(request: Request, db: D1Database, userId: str
   } else if (path === '/api/points/checkin' && request.method === 'POST') {
     const rules = await db.prepare('SELECT signin_reward FROM point_rules WHERE user_id=?').bind(userId).first<{signin_reward:number}>();
     if (!rules) throw new ApiError(400, '请先保存积分规则以开启打卡');
-    const date = beijingDate();
+    const date = body.date === undefined ? beijingDate() : String(body.date);
+    const timestamp = Date.parse(`${date}T00:00:00+08:00`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(timestamp) || beijingDate(new Date(timestamp)) !== date || date > beijingDate() || Date.now() - timestamp > 31 * 86400000) throw new ApiError(400, '离线签到日期无效或已超过 30 天');
     await db.batch([
       db.prepare('INSERT OR IGNORE INTO daily_checkins VALUES (?,?,?)').bind(userId, date, now),
       db.prepare('INSERT OR IGNORE INTO point_ledger VALUES (?,?,?,?,?,?,?)').bind(crypto.randomUUID(), userId, `signin:${date}`, rules.signin_reward, rules.signin_reward, `每日签到：${date}`, now),
+      db.prepare('UPDATE point_ledger SET amount=0 WHERE user_id=? AND event_key=?').bind(userId, `miss:signin:${date}`),
     ]);
   } else if (path === '/api/shop/products' && (request.method === 'POST' || request.method === 'PATCH')) {
     const name = String(body.name || '').trim(), cost = integer(body.cost, true);
     if (!name || name.length > 80) throw new ApiError(400, '商品名称应为 1 至 80 个字');
-    if (request.method === 'POST') await db.prepare('INSERT INTO shop_products VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), userId, name, cost, now).run();
+    if (request.method === 'POST') {
+      const id = request.headers.get('X-Jishi-Create-Id') || crypto.randomUUID();
+      if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError(400, '本地创建标识无效');
+      const previous = await db.prepare('SELECT user_id FROM shop_products WHERE id=?').bind(id).first<{user_id:string}>();
+      if (previous && previous.user_id !== userId) throw new ApiError(409, '本地创建标识已被使用');
+      if (!previous) await db.prepare('INSERT INTO shop_products VALUES (?,?,?,?,?)').bind(id, userId, name, cost, now).run();
+    }
     else {
       const result = await db.prepare('UPDATE shop_products SET name=?,cost=? WHERE id=? AND user_id=?').bind(name, cost, String(body.id || ''), userId).run();
       if (!result.meta.changes) throw new ApiError(404, '商品不存在');

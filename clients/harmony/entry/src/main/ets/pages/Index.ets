@@ -20,6 +20,7 @@ struct Index {
   @State loading: boolean = true;
   private readonly primaryUrl: string = 'https://jishi.awaqwq233.com/';
   private readonly fallbackUrl: string = 'https://awaqwq233.com/note/';
+  private offlineShell: boolean = false;
   private scheduler: ReminderScheduler = new ReminderScheduler();
   private nativeBridge: JishiNativeBridge = {
     notify: (title: string, body: string, key: string): string => {
@@ -86,13 +87,15 @@ struct Index {
   }
 
   private failOver(): void {
+    if (this.offlineShell) { this.loadFailed = true; this.loading = false; return; }
     if (this.currentUrl === this.primaryUrl) {
       this.currentUrl = this.fallbackUrl;
       this.loadFailed = false;
       return;
     }
-    this.loadFailed = true;
-    this.loading = false;
+    this.offlineShell = true;
+    this.loadFailed = false;
+    this.currentUrl = this.primaryUrl;
   }
 
   private isTrustedUrl(url: string): boolean {
@@ -115,7 +118,24 @@ struct Index {
         })
         .onControllerAttached(() => {
           const userAgent: string = this.controller.getUserAgent();
-          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.4`);
+          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.5`);
+        })
+        .onInterceptRequest((event) => {
+          if (!event || !this.offlineShell || !this.isTrustedUrl(event.request.getRequestUrl()) || event.request.getRequestMethod() !== 'GET') return null;
+          const url: string = event.request.getRequestUrl();
+          const path: string = url.replace(/^https:\/\/[^/]+/, '').split('?')[0];
+          const relative: string = path === '/' || path === '/note/' ? 'index.html' : path.replace(/^\/note\//, '').replace(/^\//, '');
+          if (!/^(index\.html|app-icon\.png|favicon\.svg|manifest\.webmanifest|assets\/[a-zA-Z0-9_.-]+\.(js|css))$/.test(relative)) return null;
+          try {
+            const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            const bytes: Uint8Array = context.resourceManager.getRawFileContentSync(`offline-shell/${relative}`);
+            const response: WebResourceResponse = new WebResourceResponse();
+            response.setResponseData(bytes.buffer as ArrayBuffer);
+            response.setResponseCode(200); response.setReasonMessage('OK'); response.setResponseEncoding('UTF-8');
+            response.setResponseMimeType(relative.endsWith('.js') ? 'application/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.png') ? 'image/png' : relative.endsWith('.svg') ? 'image/svg+xml' : relative.endsWith('.webmanifest') ? 'application/manifest+json' : 'text/html');
+            response.setResponseHeader([{ headerKey: 'Cache-Control', headerValue: 'no-store' }]);
+            return response;
+          } catch (_) { return null; }
         })
         .onPageBegin(() => {
           this.loadFailed = false;

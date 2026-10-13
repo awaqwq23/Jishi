@@ -1,14 +1,15 @@
 {
   "name": "@jishi/windows",
-  "version": "0.4.7",
-  "description": "记时多用户待办 Windows 客户端",
+  "version": "0.4.8",
+  "description": "拾光记事多用户待办 Windows 客户端",
   "author": "Jishi",
   "private": true,
   "main": "main.cjs",
   "scripts": {
     "dev": "electron .",
     "build": "electron-builder --win nsis --publish never",
-    "test": "node --test host-resolver.test.cjs update-downloader.test.cjs reminder-store.test.cjs"
+    "test": "node --test host-resolver.test.cjs update-downloader.test.cjs reminder-store.test.cjs",
+    "prebuild": "node ../../scripts/prepare-offline-shell.mjs windows"
   },
   "devDependencies": {
     "electron": "43.7.9",
@@ -16,7 +17,7 @@
   },
   "build": {
     "appId": "cn.jishi.todo",
-    "productName": "记时",
+    "productName": "拾光记事",
     "directories": {
       "output": "../../.local/build/windows"
     },
@@ -26,7 +27,9 @@
       "host-resolver.cjs",
       "update-downloader.cjs",
       "app-config.json",
-      "reminder-store.cjs"
+      "reminder-store.cjs",
+      "offline-shell.cjs",
+      "offline-shell/**"
     ],
     "win": {
       "target": "nsis"
