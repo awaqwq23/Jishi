@@ -59,7 +59,7 @@ if (!githubRelease) {
     body: JSON.stringify({
       tag_name: tag,
       target_commitish: target,
-      name: `记时 Windows ${manifest.clients.windows.version} / Android ${manifest.clients.android.version}`,
+      name: `拾光记事 Windows ${manifest.clients.windows.version} / Android ${manifest.clients.android.version}`,
       body: `与正式站点更新清单一致的安装包。\n\nWindows SHA-256: ${artifacts[0].sha256.toUpperCase()}\nAndroid SHA-256: ${artifacts[1].sha256.toUpperCase()}\n\n下载对应平台的安装包后按系统提示覆盖安装。`,
       draft: false,
       prerelease: false,

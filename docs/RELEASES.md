@@ -103,14 +103,28 @@ Windows 0.4.6 / Android 0.4.7；对应原 Web `web-1eb33d5ff18eb60d`。完整生
 提交 85ab69b 的运行内容已在 /opt/jishi-staging 验证；完整 systemd 沙箱、复制旧数据、实际暂存代理注册/登录/bootstrap 及恶意来源拒绝均通过。Windows/Linux Web 哈希均为 e7c28da6e60fa554bf28534ac3e20d0d981f73b30095cb4770601fc0424bc1fb。备份拟采用 /var/backups/jishi/previous-20261012-harmony-review，生产部署尚未执行，等待 AGENTS.md 最终明确确认。华为会话需重新登录后替换商店资料；详细命令与回滚在 HARMONY_REVIEW_FIXES.md。
 ## 2026-10-13 离线进入和恢复联网同步
 
-用户在鸿蒙审核修复任务中新增要求：无法连接服务器时进入本机空间，保存账号密码和个人内容，联网后更新同步。
+用户新增要求：服务器不可达时进入本机空间，保存账号密码和个人内容，联网后更新同步。
 
-实现按邮箱隔离的 IndexedDB 数据与持久化上传队列，AES-GCM 加密本机凭据，清除旧版明文密码缓存。支持本机账号创建、离线待办/习惯/日记/配置/签到与商品编辑，联网恢复账号验证和增量上传，幂等创建与内容冲突保护。原登录接口、Cookie 和来源校验保持兼容；没有信任 null Origin、内部来源或 User-Agent。离线积分为预览，兑换与头像上传需联网。
+实现邮箱隔离的 IndexedDB 数据、持久化上传队列、AES-GCM 凭据保存及旧密码自动迁移。待办、习惯、日记、配置、签到和商品编辑可本机保存；联网恢复当前账号验证和增量上传，幂等创建、原子本机版本检查、服务器账号绑定及内容冲突保护避免串号或覆盖。保留原始创建与完成时间，首次离线积分启用和签到支持最近 30 天补算。兑换须联网核对余额。原登录接口、Cookie、来源保护、主备站和 `/note` 路径保持兼容。
 
-鸿蒙 0.3.5（3000005）正式包、Windows 0.4.8 经 GitHub 构建及安装冒烟测试；Android 0.4.9 编译为未签名候选，缺少既有签名密钥，正式 Android 更新保留 0.4.7。最终原生构建源码：`bc892def5a0b6d3b281134f4366ba5d4e4f1460c`，GitHub 构建 `38336020968`。本机实际浏览器验证离线注册、保存、页面服务停止后刷新进入、恢复连接自动上传，并由隔离 API 核实没有重复待办。未进行鸿蒙/Android 真机验收。
+鸿蒙 0.3.5（3000005）正式签名包及 Windows 0.4.9 已构建；原生源码提交 `69d25986e7437fddfd061712339e79a0c8029a93`，GitHub 构建 `38348789182` 的 Windows 安装冒烟、Android 编译均通过。Android 0.4.9 是未签名候选，未取得原签名密钥，正式更新保留 0.4.7。
 
-本次 Web 标记：`web-cef1b1fbd246114d`；哈希 `cef1b1fbd246114dbffea803f7e28e2f03bda236f24b81e0206047080187e598`。Windows 安装包 112523872 字节，SHA256 `7ACD20D75C9B64B73CAC74D6F675E77F51AADF54F85C822EB658566C31FC08D7`；鸿蒙正式包 2532317 字节，SHA256 `85B433EDF6200CC13D0299C40639CEE13209D9535A61FC7494A28BD55D598005`。
+Windows 安装包 112524930 字节，SHA256 `93E0B711A3FFBB1592C6FA664712C4F91F27FB5A20E4D56F0D7699736659EF56`。鸿蒙正式包 2533921 字节，SHA256 `11060F43666AA852100502DCA4AC11DB0A14F8B15370CDAC68F9047B4FED4C5A`。
 
-生产尚未更新：重新建立 `/opt/jishi-staging` 做 Linux 验收，旧暂存资料移到 `/opt/jishi-staging-before-offline-20261013` 保留。最终部署命令、完整备份及回滚仍需按 AGENTS.md 第 4 步获得用户最终明确确认。拟用备份 `/var/backups/jishi/previous-20261013-offline-sync`，确认前不创建生产备份、不停正式服务、不清理历史生产备份。AGC 上传与上架状态另行核验；APP 备案由用户办理。
+Web `web-26dc081b9530e6c2`，哈希 `26dc081b9530e6c28df814305866c2d73debac00c96b0a2673035be96e6a236c`；Windows/Linux 重算一致。完整 Linux 检查通过：Server 13、Web 15、Windows 兼容 9、原生离线入口 2；迁移链、Nginx 配置、完整 systemd 限制及复制旧数据验证通过。实际暂存代理注册/登录/bootstrap、重试创建、过期版本和账号切换保护均通过，恶意来源仍返回 JSON 403。依赖检查没有高危或严重项。
 
-详细行为及测试边界见 [离线同步说明](OFFLINE_SYNC.md)。
+实际浏览器通过断网注册、保存、页面服务停止后的重启、联网自动上传、双页面保护、主题保留验证。真机尚未验收。生产未部署，拟执行 `/opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261013-offline-sync`，必须取得 AGENTS.md 第 4 步的最终明确确认。完整生产备份尚未创建，正式服务未停止，过期生产备份未清理。AGC 会话过期，尚未上传 0.3.5；备案由用户办理。
+
+详细行为和边界见 [离线同步说明](OFFLINE_SYNC.md)。
+
+## 2026-10-13 系统通知补充修复
+
+用户报告手机仅页面弹窗、Windows 应用打开时到点无桌面通知。修复原生通知存在时前台发送被跳过、鸿蒙使用默认无状态栏图标的内容资讯类别、通知发送失败被忽略及到时刷新取消代理提醒的问题。Windows 等待原生接受、保留通知对象，失败可使用独立桌面窗口；到时队列等待确认才移除，失败重试和重启保留，前后台去重。测试按钮反馈实际发送结果，新能力为增量接口，旧客户端仍可发送。
+
+源码 4c193176a00159e0cfb5ccdc365f619ef6a3aaae 已推送，GitHub 构建 38386327062 的 Windows 安装启动和安装后定时通知均通过，Android 0.4.10 未签名候选编译通过。正式 Android 保留 0.4.7；缺少原签名密钥，未发布替代密钥。
+
+Windows 0.4.10：112526202 字节，SHA256 E890E5D3543CAB5597AA4AE5D148822481D0976B42E7BCD06C491E38C2CFBFFE。鸿蒙 0.3.6（3000006）：2537671 字节，SHA256 ECAFEA5D8D89B5242DC22FA56C2B385B36FA04C412971D02C6A887F2B0999AB5。代理提醒 Profile、证书、官方 SDK 签名检查及编译名称图标已核对。
+
+Windows/Linux Web 哈希 b426708b717067dc0fc764c199d5e8d4873ccec5e925ef98db7fe875e11968bc 一致；Linux Server 13、Web 20、Windows 12、原生离线入口 2 项通过，无高危或严重依赖项。完整 systemd 限制、复制旧库、真实 Nginx 代理注册/登录/bootstrap、恶意来源 JSON403、旧账号数据、离线重试和账号绑定保护通过。
+
+current 保存本次 0.4.10 / 0.3.6，previous 保存前一候选 0.4.9 / 0.3.5，两个 Android 均为正式 0.4.7。前一候选不是已部署生产版本，生产回滚必须使用部署前完整备份。鸿蒙真机、正式部署、AGC 上传仍未完成。拟执行 sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261013-offline-sync，须获得 AGENTS.md 第 4 步的最终确认。生产备份清理未执行。

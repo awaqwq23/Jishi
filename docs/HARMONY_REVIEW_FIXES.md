@@ -53,4 +53,10 @@ sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-s
 
 ## 2026-10-13 离线功能更新
 
-当前修复候选已更新为鸿蒙 0.3.5（3000005）和 Windows 0.4.8，名称、图标及注册来源修复继续保留。新增离线账号、加密保存密码、本机记录和恢复联网后同步；行为与验证见 [OFFLINE_SYNC.md](OFFLINE_SYNC.md)。旧暂存目录已移至 /opt/jishi-staging-before-offline-20261013，当前 /opt/jishi-staging 为新候选。生产仍未部署，最终命令使用 previous-20261013-offline-sync；本次未办理备案。
+当前修复候选已更新为鸿蒙 0.3.5（3000005）和 Windows 0.4.9，名称、图标及注册来源修复继续保留。新增离线账号、加密保存密码、本机记录和恢复联网后同步；行为与验证见 [OFFLINE_SYNC.md](OFFLINE_SYNC.md)。旧暂存目录已移至 /opt/jishi-staging-before-offline-20261013，当前 /opt/jishi-staging 为新候选。生产仍未部署，最终命令使用 previous-20261013-offline-sync；本次未办理备案。
+
+最终离线候选为源码 69d2598，Web 标记 web-26dc081b9530e6c2；Linux 完整沙箱、实际代理及账号/重试保护通过。生产仍未部署，当前部署预检应以离线候选的当前标记和 previous-20261013-offline-sync 为准。
+
+### 通知修复后的发布候选
+
+当前为鸿蒙 0.3.6（3000006）与 Windows 0.4.10；源码 4c19317。系统通知类别、发送反馈、到时队列保护、桌面通知保留与重试已修复。Windows 安装后定时通知测试通过，鸿蒙已编译、正式签名及验签，尚未手机实测。当前 Web 标记 web-b426708b717067dc；生产尚未部署，AGC 会话过期，新包尚未上传。详细说明见 [系统通知说明](SYSTEM_NOTIFICATIONS.md)。

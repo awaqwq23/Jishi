@@ -1,18 +1,10 @@
 {
+  "appName": "拾光记事",
+  "version": "0.3.5",
   "file": "Jishi-Harmony-Store-Materials.zip",
-  "version": "0.3.4",
-  "size": 2568860,
-  "sha256": "4BBC42D93DA364C452CD76D7F1D1EEA72CA5A3083E85ACB747F4D6ACD417421E",
-  "files": 18,
-  "includesPrivateCredentials": false,
-  "policyStatus": "draft",
-  "storeReviewSubmitted": false,
-  "privacyDraftSaved": true,
-  "ageRatingSaved": true,
-  "ageRating": {
-    "china": "8+",
-    "brazil": "10+",
-    "other": "7+"
-  },
-  "appName": "拾光记事"
+  "size": 4637367,
+  "sha256": "DE3012849A1B9D795BB3BB9485B283D25D40A0F8D3DE41CEA92B06A89C5906C9",
+  "storeUploaded": false,
+  "storeSubmitted": false,
+  "containsCredentials": false
 }
