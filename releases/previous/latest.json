@@ -1,31 +1,32 @@
 {
   "schemaVersion": 1,
   "required": true,
-  "releaseId": "web-26dc081b9530e6c2",
-  "webBuild": "26dc081b9530e6c28df814305866c2d73debac00c96b0a2673035be96e6a236c",
-  "publishedAt": "2026-10-13T05:08:49.305Z",
+  "releaseId": "web-b426708b717067dc",
+  "webBuild": "b426708b717067dc0fc764c199d5e8d4873ccec5e925ef98db7fe875e11968bc",
+  "publishedAt": "2026-10-13T11:05:11.773Z",
   "notes": [
-    "服务器不可达可进入本机账号，密码加密保存",
-    "离线记录、自动同步、原始时间和积分补录",
-    "保护账号隔离及冲突，统一拾光记事名称图标"
+    "修复鸿蒙通知栏和后台定时提醒",
+    "修复 Windows 到时桌面通知与失败重试",
+    "支持断网进入及本机加密保存，联网自动同步",
+    "统一拾光记事名称与图标、修复注册来源校验"
   ],
   "clients": {
     "windows": {
-      "version": "0.4.9",
-      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.9.exe",
-      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.9-a0.4.7/Jishi-Windows-Setup-0.4.9.exe",
-      "sha256": "93E0B711A3FFBB1592C6FA664712C4F91F27FB5A20E4D56F0D7699736659EF56",
-      "size": 112524930,
+      "version": "0.4.10",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.10.exe",
+      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.10-a0.4.7/Jishi-Windows-Setup-0.4.10.exe",
+      "sha256": "E890E5D3543CAB5597AA4AE5D148822481D0976B42E7BCD06C491E38C2CFBFFE",
+      "size": 112526202,
       "required": true
     },
     "android": {
       "version": "0.4.7",
       "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.7.apk",
-      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.9-a0.4.7/Jishi-Android-0.4.7.apk",
+      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.10-a0.4.7/Jishi-Android-0.4.7.apk",
       "sha256": "2C238D4F4D346F613D77E008A626EF46A98F5F70FEC6F3E84F089FFF2C0FA8E2",
       "size": 4069317,
       "required": true,
-      "sourceVersion": "0.4.9",
+      "sourceVersion": "0.4.10",
       "retained": true
     }
   }

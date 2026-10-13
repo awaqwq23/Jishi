@@ -152,3 +152,15 @@ current 保存本次 0.4.10 / 0.3.6，previous 保存前一候选 0.4.9 / 0.3.5�
 最终功能检查：Server TypeScript / Wrangler dry-run 与 17 项测试、Web lint / 生产构建与 28 项测试、Windows 12 项、原生离线入口与备份/哈希/鸿蒙权限 7 项通过。依赖审计无高危或严重项，8 项已有中危。Windows 源码 0.4.11、Android 候选源码 0.4.11、鸿蒙 0.3.7（3000007），离线内置页面一并更新。正式 Android 保留 0.4.7，缺少原发布签名密钥。
 
 正式服务只读检查全部 active；未应用本次功能，尚待安装包验证和 Linux 独立暂存检查。不得把本条视为已上线或真机验收。
+
+## 2026-10-14 游客版本发布准备
+
+功能提交 5f257a491e403505068690707b1018bd5cf1cc40 已推送。Linux 暂存 Server 17、Web 28、Windows 12 项及全新五个迁移通过；Windows/Linux Web 哈希 5868378493343d612143103057ad5fa88a05b6f5d73a06f5b057181ce495f5b3 一致。完整生产 systemd 限制组合下，隔离数据库副本升级、新表、旧数据数量、真实 Nginx 代理注册/登录、双密码验证、整批游客迁移重试及旧邮箱客户端兼容通过，恶意来源仍为 JSON403。正式服务持续 active，未应用游客更新。
+
+实际本机网页验收：API 未启动时进入游客、创建待办、刷新保留；双密码不一致阻止注册，提示保持在注册页；启用独立空库 API 后注册新用户名、游客记录迁移成功并显示已同步，SQLite 只读核对同一账号仅一条迁移回执和一条待办。截图位于私有 .local/agc-evidence/guest-local-records.png、guest-password-confirmation.png 和 guest-migrated-account.png，均为实际网页证据，不是手机真机或生产证据。
+
+GitHub 构建 38416506363 的 Windows 0.4.11 安装及安装后定时系统通知均通过，Android 0.4.11 未签名候选编译通过。Windows 包 112529087 字节，SHA256 09949A5923C33E978B3E8AE449028B98C5C18666DBA8AFAF67B7AC38B328F7EE，服务器临时包与本机分段下载结果相同。鸿蒙 0.3.7（3000007）正式包 2541957 字节，SHA256 7E0381F428FC80B3EE0FBF25086008046BA2E4027DE9E8903E1376B8B16F16DE，证书、代理提醒 Profile、签名、名称和编译图标一致。原 Android 签名密钥未提供，正式 Android 保留 0.4.7。新包没有真机验收、未上传或提交 AGC。
+
+current 保存 0.4.11 / 0.3.7，previous 保存已部署前版 0.4.10 / 0.3.6；本机旧 previous 暂存保留至部署及验收成功。正式源码、数据库、秘密和旧生产回滚备份未清理。本次更新清单 web-5868378493343d61、required=true 已通过 npm run check:updates。鸿蒙材料包含新版正式包、原一致图标和实际展示截图、游客说明、更新说明与隐私政策草案，不含审核账号凭据。
+
+拟执行 sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261014-guest-usernames；须先完成发布预检并取得 AGENTS.md 第 4 步对该准确命令的最终明确确认。备份由正式 apply 停服后完整创建并加密校验，失败由脚本回滚；未创建本次生产备份，未停止正式服务。

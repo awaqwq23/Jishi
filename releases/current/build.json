@@ -1,15 +1,14 @@
 {
   "windows": {
-    "version": "0.4.10",
-    "runId": 38386327062,
-    "commit": "4c193176a00159e0cfb5ccdc365f619ef6a3aaae",
-    "artifact": "windows-candidate",
-    "installedScheduledNotificationSmoke": true
+    "version": "0.4.11",
+    "runId": 38416506363,
+    "commit": "5f257a491e403505068690707b1018bd5cf1cc40",
+    "artifact": "windows-candidate"
   },
   "android": {
     "version": "0.4.7",
     "retained": true,
-    "pendingCandidateVersion": "0.4.10",
+    "pendingCandidateVersion": "0.4.11",
     "pendingReason": "Original Android release signing key unavailable"
   }
 }
