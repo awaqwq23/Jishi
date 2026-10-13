@@ -128,3 +128,7 @@ Windows 0.4.10：112526202 字节，SHA256 E890E5D3543CAB5597AA4AE5D148822481D09
 Windows/Linux Web 哈希 b426708b717067dc0fc764c199d5e8d4873ccec5e925ef98db7fe875e11968bc 一致；Linux Server 13、Web 20、Windows 12、原生离线入口 2 项通过，无高危或严重依赖项。完整 systemd 限制、复制旧库、真实 Nginx 代理注册/登录/bootstrap、恶意来源 JSON403、旧账号数据、离线重试和账号绑定保护通过。
 
 current 保存本次 0.4.10 / 0.3.6，previous 保存前一候选 0.4.9 / 0.3.5，两个 Android 均为正式 0.4.7。前一候选不是已部署生产版本，生产回滚必须使用部署前完整备份。鸿蒙真机、正式部署、AGC 上传仍未完成。拟执行 sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261013-offline-sync，须获得 AGENTS.md 第 4 步的最终确认。生产备份清理未执行。
+
+最终发布材料提交 2897b4ea6a9e3db8f76c63c0986c324e9ff0d802 已推送；公开 GitHub Release clients-v0.4.10-a0.4.7 发布任务 38387952951 成功。服务器 --preflight 再次独立验证 Windows 0.4.10 / Android 0.4.7 资产大小、SHA256 和公开链接，生产秘密文件门禁、更新清单、依赖审计及 nginx -t 均通过。待用备份目录 /var/backups/jishi/previous-20261013-offline-sync 当前不存在，正式 apply 尚未执行。Windows 真实安装后通知日志为 installed_windows_scheduled_notification=pass；不能将其当作鸿蒙真机结果。
+
+内置浏览器当前页面清单显示“华为账号-登录”，再次读取页面操作连续超时；未上传 0.3.6、未提交审核。四项审核问题、离线同步与通知说明及正式 APP/图标/四张展示截图已整理入 releases/current/Jishi-Harmony-Store-Materials.zip，秘密和审核登录资料未打入材料包。生产备份、暂存历史和可重建残留清理仍等待部署成功及完整验收。
