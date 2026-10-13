@@ -19,7 +19,27 @@ export async function deviceStore() {
     transaction.oncomplete = () => resolve(request.result);
     transaction.onabort = transaction.onerror = () => reject(transaction.error);
   });
-  return { get: key => run('readonly', s => s.get(key)), put: (key, value) => run('readwrite', s => s.put(value, key)) };
+  const writes = new Map();
+  const put = (key, value) => {
+    const preceding = writes.get(key) || Promise.resolve();
+    const writing = preceding.catch(() => {}).then(() => new Promise((resolve, reject) => {
+      const transaction = db.transaction('accounts', 'readwrite'), store = transaction.objectStore('accounts');
+      const revision = value.revision || 0;
+      let reason;
+      const current = store.get(key);
+      current.onsuccess = () => {
+        if ((current.result?.revision || 0) !== revision) {
+          reason = fail('另一个页面已更新本机内容。待同步记录仍保留，请重新打开此页面后重试', 409);
+          transaction.abort(); return;
+        }
+        store.put({ ...value, revision: revision + 1 }, key);
+      };
+      transaction.oncomplete = () => { value.revision = revision + 1; resolve(); };
+      transaction.onabort = transaction.onerror = () => reject(reason || transaction.error);
+    }));
+    writes.set(key, writing); return writing;
+  };
+  return { get: key => run('readonly', s => s.get(key)), put };
 }
 
 async function seal(password) {
@@ -191,7 +211,7 @@ export class OfflineClient {
     // Persist the mutation and its retry identity together before reporting success.
     const oldData = this.account.data;
     this.account.data = draft; this.account.queue.push(operation);
-    try { await this.save(); } catch (error) { this.account.data = oldData; this.account.queue.pop(); throw error; }
+    try { await this.save(); } catch (error) { this.account.data = oldData; this.account.queue = this.account.queue.filter(item => item.id !== operation.id); throw error; }
     void this.sync(); return result;
   }
   async sync() {
