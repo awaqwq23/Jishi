@@ -16,3 +16,20 @@ test('activation completes before a controlled page finishes reloading',async()=
   finally {clearTimeout(timer);}
   assert.deepEqual(navigations,[client.url]);assert.deepEqual(deleted,['jishi-shell-v2:/note']);
 });
+
+test('installation caches the built JS/CSS and offline assets never receive HTML', async () => {
+  const handlers = new Map(), added = [];
+  const shell = new Response('<script src="./assets/app.js"></script><link href="./assets/app.css" rel="stylesheet">');
+  vm.runInNewContext(await readFile(new URL('../public/sw.js', import.meta.url), 'utf8'), {
+    URL, Response, fetch: async () => { throw new TypeError('offline'); },
+    self: { registration: { scope: 'https://jishi.test/note/' }, addEventListener(type, handler) { handlers.set(type, handler); }, async skipWaiting() {} },
+    caches: { async open() { return { async addAll(items) { added.push(...items); }, async match() { return shell.clone(); } }; }, async match(request) { return request === '/note/' ? shell.clone() : undefined; } },
+  });
+  let installing; handlers.get('install')({ waitUntil(promise) { installing = promise; } }); await installing;
+  assert.ok(added.includes('https://jishi.test/note/assets/app.js'));
+  assert.ok(added.includes('https://jishi.test/note/assets/app.css'));
+  let reply; handlers.get('fetch')({ request: { url: 'https://jishi.test/note/assets/missing.js', method: 'GET', mode: 'cors' }, respondWith(promise) { reply = promise; } });
+  assert.equal((await reply).type, 'error');
+  handlers.get('fetch')({ request: { url: 'https://jishi.test/note/', method: 'GET', mode: 'navigate' }, respondWith(promise) { reply = promise; } });
+  assert.match(await (await reply).text(), /assets\/app.js/);
+});
