@@ -165,3 +165,19 @@ current 保存 0.4.11 / 0.3.7，previous 保存已部署前版 0.4.10 / 0.3.6；
 
 拟执行 sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261014-guest-usernames；须先完成发布预检并取得 AGENTS.md 第 4 步对该准确命令的最终明确确认。备份由正式 apply 停服后完整创建并加密校验，失败由脚本回滚；未创建本次生产备份，未停止正式服务。
 发布材料提交 12fc8f7f4cc333a3151992440864ac115372a258 已推送，公开发布任务 38430143329 成功。服务器部署 --preflight 再次独立核对 Windows 0.4.11 和正式 Android 0.4.7 两个公开资产大小、SHA256 与下载链接，Release clients-v0.4.11-a0.4.7 验证通过；更新清单、生产秘密门禁、依赖审计和 nginx -t 均通过。备份目标 /var/backups/jishi/previous-20261014-guest-usernames 尚不存在，正式 apply 没有执行。等待对前述准确命令的最终确认，正式版本仍为 web-b426708b717067dc / Windows 0.4.10，鸿蒙商店与真机验收未完成。
+
+## 2026-10-14 用户确认后的游客版本正式部署
+
+用户明确回复“确认部署”，已执行此前展示的准确命令 sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261014-guest-usernames。部署源码 9536a49b9f7b51a8adbfa54c1e302e081cbe4fe7，功能源码 5f257a4，Web web-5868378493343d61，Windows 正式更新 0.4.11、Android 正式保留 0.4.7（sourceVersion 0.4.11）。公开 GitHub Release 和服务器下载的包大小、SHA256 均核对通过，required=true。
+
+本次完整加密回滚备份为 /var/backups/jishi/previous-20261014-guest-usernames/production.tar.aesgcm，1107599403 字节；加密后解密逐字节比对和 SHA256 校验通过。生产秘密文件逐字节一致且权限/服务所有者门禁通过，未输出密钥，旧会话签名配置保留。本次未修改 Nginx，原生产 TLS 配置保留。
+
+API / Web / Nginx 全部 active，内部健康和主备站主页及健康均 200，无效登录 JSON401，恶意、null、内部来源 JSON403。真实旧审核账号在主备站登录、bootstrap、积分及 3 件演示商品读取正常。部署验收中 Windows 0.4.4 一次登录遇到 Wrangler ProxyWorker Network connection lost，Nginx 500 原始记录为 2026-10-13 16:41:25 UTC（北京时间 10月14日 00:41:25）；未重启服务。随后两个旧版本各三轮真实登录和读取共 12 个请求均 200，复测窗口无新异常。保留原失败、定位及复测报告，不把初次失败描述为通过。
+
+新用户名注册 201，两次密码不一致 400；同一注册标识丢失回复后重试仍为同一账号。生产独立合成验收账号的游客待办、回收站、分类、提醒组、习惯、完成记录、日记、积分规则、签到、流水和商品完整迁移，主备站均读取到保存结果。重复迁移不重复入账，17 分余额不变，游客历史兑换重试不重复扣分；其他迁移标识 409 拒绝覆盖。正常旧待办接口的幂等创建、过期版本和账号绑定保护仍正常。
+
+与部署前加密备份逐表比对，11 个业务表、169 条旧记录和 18 个媒体文件保留；排除 prepareUser 与积分结算自动更新的 updated_at / settled_date 字段，其余旧业务内容逐项一致，媒体 SHA256 一致。新用户名字段和 guest_migrations 表存在，五个迁移均执行。在线验证全程使用 SQLite 只读连接，未启动第二个 Wrangler 访问生产数据。
+
+全部服务器验收通过后，保留上述唯一完整回滚备份，删除 previous-20261013-offline-sync 旧备份和公开 Windows 0.4.9 包。核实绝对路径后删除 /opt/jishi-staging 及本次五个 /tmp/jishi-guest-* 文件；本机只清理 obsolete-before-guest-20261013、重复鸿蒙构建与分段下载，保留当前 0.4.11 / 0.3.7 和前一代 0.4.10 / 0.3.6、签名凭据及 Android 0.4.11 未签名候选。正式 Android 两代均为 0.4.7。
+
+完整服务器报告保存在回滚备份的 verification-complete、production-contracts.json、legacy-acceptance.json、real-account-acceptance.json、old-data-verification.json、staging-cleanup-plan.json；本机汇总为私有 .local/review/production-guest-acceptance.json。鸿蒙 0.3.7（3000007）正式包和上架材料已更新，未真机验收、未由本轮上传或提交 AGC。浏览器本轮连接两次超时，未补拍生产页面；之前实际本机网页的游客及迁移截图仍保留，不能当作生产或手机真机截图。备案仍由用户办理。
