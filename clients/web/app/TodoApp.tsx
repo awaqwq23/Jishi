@@ -575,11 +575,23 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
 export default function TodoApp() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [syncStatus, setSyncStatus] = useState({ offline: false, pending: 0, issue: '' });
+  const previousProfileId = useRef<string | null>(null);
   useEffect(() => {
     readDeviceLogin();
     const receive = (event: Event) => {
       const detail = (event as CustomEvent<{ data: Bootstrap | null; status: typeof syncStatus }>).detail;
-      if (detail.data) setData({ ...detail.data, user: { ...detail.data.user, settings: readLocalAppearance(detail.data.user.id, detail.data.user.settings) } });
+      if (detail.data) {
+        const nextId = detail.data.user.id, previousId = previousProfileId.current;
+        if (previousId?.startsWith('local-') && previousId !== nextId) {
+          const appearance = localStorage.getItem(`${APPEARANCE_KEY_PREFIX}${previousId}`);
+          if (appearance) localStorage.setItem(`${APPEARANCE_KEY_PREFIX}${nextId}`, appearance);
+          void readLocalBackground(previousId).then(async blob => {
+            if (blob) { await writeLocalBackground(nextId, blob); window.dispatchEvent(new CustomEvent('jishi-local-background-changed', { detail: nextId })); }
+          }).catch(() => {});
+        }
+        previousProfileId.current = nextId;
+        setData({ ...detail.data, user: { ...detail.data.user, settings: readLocalAppearance(nextId, detail.data.user.settings) } });
+      }
       setSyncStatus(detail.status);
     };
     const retry = () => void reconnect();
@@ -633,8 +645,10 @@ export default function TodoApp() {
   useEffect(() => {
     const userId = data?.user.id; let cancelled = false;
     if (!userId) { replaceBackgroundObjectUrl(null); return; }
-    void readLocalBackground(userId).then((blob) => { if (!cancelled) replaceBackgroundObjectUrl(blob); }).catch(() => { if (!cancelled) replaceBackgroundObjectUrl(null); });
-    return () => { cancelled = true; };
+    const reload = () => void readLocalBackground(userId).then((blob) => { if (!cancelled) replaceBackgroundObjectUrl(blob); }).catch(() => { if (!cancelled) replaceBackgroundObjectUrl(null); });
+    const migrated = (event: Event) => { if ((event as CustomEvent<string>).detail === userId) reload(); };
+    reload(); window.addEventListener('jishi-local-background-changed', migrated);
+    return () => { cancelled = true; window.removeEventListener('jishi-local-background-changed', migrated); };
   }, [data?.user.id, replaceBackgroundObjectUrl]);
   useEffect(() => () => { if (backgroundObjectUrl.current) URL.revokeObjectURL(backgroundObjectUrl.current); }, []);
   useEffect(() => {
