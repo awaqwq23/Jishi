@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 
 type Rules = { signinReward:number; signinPenalty:number; taskReward:number; taskPenalty:number; habitReward:number; habitPenalty:number };
-export type PointsData = { provisional?:boolean; enabled:boolean; rules:Rules; balance:number; checkedIn:boolean; today:string; products:{id:string;name:string;cost:number}[]; ledger:{id:string;amount:number;label:string;createdAt:string}[] };
+export type PointsData = { guest?:boolean; provisional?:boolean; enabled:boolean; rules:Rules; balance:number; checkedIn:boolean; today:string; products:{id:string;name:string;cost:number}[]; ledger:{id:string;amount:number;label:string;createdAt:string}[] };
 type Props = { userId:string; value:PointsData; request:(path:string,method:string,body?:unknown)=>Promise<PointsData>; onChange:(value:PointsData)=>void };
 type Redemption = {productId:string; requestId:string};
 function pendingRedemption(key:string):Redemption|null {
@@ -40,12 +40,13 @@ export default function PointsBoard({ userId, value, request, onChange }: Props)
   };
   return <div className="points-board">
     <header className="topbar"><div><span className="eyebrow">每天积累一点进步</span><h1>打卡与积分商店</h1></div><strong className="points-balance">{value.balance} 积分</strong></header>
-    {value.provisional && <p className="points-help">本机积分预览，任务与习惯积分在联网后结算；兑换须完成同步并联网核对余额。</p>}
+    {value.guest && <p className="points-help">游客积分、签到和兑换均只记录在本机；注册后随游客数据迁移。</p>}
+    {!value.guest && value.provisional && <p className="points-help">本机积分预览，任务与习惯积分在联网后结算；兑换须完成同步并联网核对余额。</p>}
     <div className="status-tabs"><button className={tab==='checkin'?'active':''} onClick={()=>setTab('checkin')}>每日打卡</button><button className={tab==='shop'?'active':''} onClick={()=>setTab('shop')}>积分商店</button><button className={tab==='history'?'active':''} onClick={()=>setTab('history')}>积分记录</button></div>
     {error && <p role="alert" className="points-error">{error}</p>}{message && <p role="status">{message}</p>}
     {tab==='checkin' && <>
       <section className="settings-card"><h2>每日签到</h2><p>{value.today} · 按北京时间结算</p><button className="button primary" disabled={busy||!value.enabled||value.checkedIn} onClick={()=>void act('/api/points/checkin','POST',{},'签到成功，积分已到账')}>{value.checkedIn?'今天已签到':`签到领取 ${value.rules.signinReward} 积分`}</button><p>{value.enabled?'完成待办、定期任务和习惯后自动计分。':'先保存下方规则，开启打卡和自动计分。'}</p></section>
-      <section className="settings-card"><h2>自定义积分规则</h2><p>奖励与扣分均填写正整数或 0；填写 0 表示不奖不扣。</p><div className="points-rules"><span>项目</span><span>完成奖励</span><span>未完成扣分</span>{([['每日签到','signinReward','signinPenalty'],['待办 / 定期任务','taskReward','taskPenalty'],['习惯','habitReward','habitPenalty']] as const).map(([label,reward,penalty])=><div className="points-rule-row" key={label}><strong>{label}</strong><input aria-label={`${label}奖励积分`} type="number" min="0" max="100000" step="1" value={rules[reward]} onChange={event=>setRules({...rules,[reward]:Number(event.target.value)})}/><input aria-label={`${label}未完成扣分`} type="number" min="0" max="100000" step="1" value={rules[penalty]} onChange={event=>setRules({...rules,[penalty]:Number(event.target.value)})}/></div>)}</div><button className="button secondary" disabled={busy} onClick={()=>void act('/api/points/rules','PUT',rules,'积分规则已保存')}>保存积分规则</button><p className="points-help">开启前的记录不计分。待办到截止时间后扣分（无截止时间不扣）；签到、定期任务与习惯在次日结算，离线期间下次同步补算。补完成会退回该次未完成扣分；取消完成会撤回奖励。重复完成不重复加分，余额可为负数。修改规则仅影响之后尚未记账的事件。</p></section>
+      <section className="settings-card"><h2>自定义积分规则</h2><p>奖励与扣分均填写正整数或 0；填写 0 表示不奖不扣。</p><div className="points-rules"><span>项目</span><span>完成奖励</span><span>未完成扣分</span>{([['每日签到','signinReward','signinPenalty'],['待办 / 定期任务','taskReward','taskPenalty'],['习惯','habitReward','habitPenalty']] as const).map(([label,reward,penalty])=><div className="points-rule-row" key={label}><strong>{label}</strong><input aria-label={`${label}奖励积分`} type="number" min="0" max="100000" step="1" value={rules[reward]} onChange={event=>setRules({...rules,[reward]:Number(event.target.value)})}/><input aria-label={`${label}未完成扣分`} type="number" min="0" max="100000" step="1" value={rules[penalty]} onChange={event=>setRules({...rules,[penalty]:Number(event.target.value)})}/></div>)}</div><button className="button secondary" disabled={busy} onClick={()=>void act('/api/points/rules','PUT',rules,'积分规则已保存')}>保存积分规则</button><p className="points-help">开启前的记录不计分。待办到截止时间后扣分（无截止时间不扣）；签到、定期任务与习惯在次日结算，{value.guest ? '游客模式在下次打开时本机补算。' : '离线期间下次同步补算。'}补完成会退回该次未完成扣分；取消完成会撤回奖励。重复完成不重复加分，余额可为负数。修改规则仅影响之后尚未记账的事件。</p></section>
     </>}
     {tab==='shop' && <>
       {pending && <section className="settings-card"><p>上一笔兑换结果尚未确认。重新确认不会重复扣分。</p><button className="button secondary" disabled={busy} onClick={()=>void act('/api/shop/redeem','POST',pending,'兑换已确认，请自行兑现奖励').then(ok=>{if(ok){retry.current=null;setPending(null);localStorage.removeItem(retryKey);}})}>确认上一笔兑换</button></section>}

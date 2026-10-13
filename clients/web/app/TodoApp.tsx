@@ -33,7 +33,7 @@ type SettingsShape = {
   theme: "linen" | "night" | "sage"; accent: string; cardOpacity: number;
   acrylic: boolean; backgroundOpacity: number; backgroundAcrylic: boolean; backgroundUrl?: string;
 };
-type Profile = { id: string; email: string; name: string; avatarUrl?: string | null; settings: SettingsShape };
+type Profile = { id: string; email: string; username?: string | null; guest?: boolean; name: string; avatarUrl?: string | null; settings: SettingsShape };
 type Bootstrap = { points?: PointsData; user: Profile; todos: Todo[]; categories: Category[]; reminderPresets: Preset[]; schedules: ScheduleItem[]; scheduleRecords: ScheduleRecord[]; diaryEntries: DiaryEntry[] };
 type DeviceLogin = { rememberAccount: boolean; rememberPassword: boolean; autoLogin: boolean; email: string; password: string };
 
@@ -347,7 +347,7 @@ function ImageCropper({ file, kind, onCancel, onConfirm }: {
           {error && <p className="background-error" role="alert">{error}</p>}
         </div>
       </div>
-      <footer className="editor-actions"><button className="button secondary" disabled={busy} onClick={onCancel}>取消</button><button className="button primary" disabled={busy || !source} onClick={() => void confirm()}>{busy ? "正在保存…" : kind === "avatar" ? "确认裁选并上传" : "确认并保存到本机"}</button></footer>
+      <footer className="editor-actions"><button className="button secondary" disabled={busy} onClick={onCancel}>取消</button><button className="button primary" disabled={busy || !source} onClick={() => void confirm()}>{busy ? "正在保存…" : kind === "avatar" ? "确认裁选并保存" : "确认并保存到本机"}</button></footer>
     </section>
   </div>;
 }
@@ -529,15 +529,15 @@ function DiaryEditor({ date, initialContent, onSave }: { date: string; initialCo
   return <section className="diary-editor"><div className="diary-paper-head"><BookOpen size={20} /><div><strong>{date === localDateKey() ? "今天" : date}</strong><small>{content.length} 字</small></div><span className={`autosave-state ${state}`}><Save size={16} />{state === "saving" ? "正在保存" : state === "error" ? "保存失败" : "已自动保存"}</span></div><textarea aria-label={`${date} 日记内容`} value={content} onChange={(event) => { const next = event.target.value; contentRef.current = next; revision.current += 1; setContent(next); setState("saving"); }} placeholder="写下今天发生的事、感受或想法……" /></section>;
 }
 
-function DiaryBoard({ entries, onSave }: { entries: DiaryEntry[]; onSave: (date: string, content: string) => Promise<void> }) {
+function DiaryBoard({ entries, onSave, guest = false }: { entries: DiaryEntry[]; guest?: boolean; onSave: (date: string, content: string) => Promise<void> }) {
   const [date, setDate] = useState(localDateKey); const selected = entries.find((entry) => entry.entryDate === date);
-  return <div className="diary-page"><header className="topbar"><div><span className="eyebrow">文字会自动保存到云端</span><h1>日记</h1></div></header><div className="diary-layout"><aside className="diary-history"><label><CalendarDays size={16} /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><div>{entries.map((entry) => <button key={entry.id} className={entry.entryDate === date ? "active" : ""} onClick={() => setDate(entry.entryDate)}><strong>{entry.entryDate}</strong><small>{entry.content.replace(/\s+/g, " ").slice(0, 42) || "空白日记"}</small></button>)}</div></aside><DiaryEditor key={date} date={date} initialContent={selected?.content || ""} onSave={onSave} /></div></div>;
+  return <div className="diary-page"><header className="topbar"><div><span className="eyebrow">{guest ? "文字只会保存在本机" : "文字先保存到本机，联网后同步"}</span><h1>日记</h1></div></header><div className="diary-layout"><aside className="diary-history"><label><CalendarDays size={16} /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><div>{entries.map((entry) => <button key={entry.id} className={entry.entryDate === date ? "active" : ""} onClick={() => setDate(entry.entryDate)}><strong>{entry.entryDate}</strong><small>{entry.content.replace(/\s+/g, " ").slice(0, 42) || "空白日记"}</small></button>)}</div></aside><DiaryEditor key={date} date={date} initialContent={selected?.content || ""} onSave={onSave} /></div></div>;
 }
 
-function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> }) {
-  useEffect(() => { clearNativeReminders(); }, []);
+function AuthScreen({ onAuthenticated, migrateGuest = false, onCancel }: { onAuthenticated: () => Promise<void>; migrateGuest?: boolean; onCancel?: () => void }) {
+  useEffect(() => { if (!migrateGuest) clearNativeReminders(); }, [migrateGuest]);
   const initialLogin = useMemo(() => readDeviceLogin(), []);
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(migrateGuest ? "register" : "login");
   const [email, setEmail] = useState(initialLogin.rememberAccount ? initialLogin.email : "");
   const [password, setPassword] = useState(initialLogin.rememberPassword ? initialLogin.password : "");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -554,7 +554,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
     }
     setBusy(true); setMessage("");
     try {
-      await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify({ email, password, name }) });
+      await api(`/api/auth/${mode}`, { method: "POST", body: JSON.stringify({ username: email, password, confirmPassword, name }) });
       if (mode === "login") writeDeviceLogin({
         rememberAccount: rememberAccount || rememberPassword || autoLogin,
         rememberPassword: rememberPassword || autoLogin,
@@ -572,12 +572,33 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => Promise<void> 
     }
   }, [initialLogin, login]);
   const submit = (event: React.FormEvent) => { event.preventDefault(); void login(false); };
-  return <main className="signin-screen"><img className="brand-mark" src={withRuntimeBase("/app-icon.png")} alt="" /><span className="eyebrow">欢迎来到拾光记事</span><h1>把今天，安放得刚刚好。</h1><p>使用邮箱创建自己的空间，待办、提醒与个人设置会在各端保持一致。</p><form className="auth-form" onSubmit={submit}>{mode === "register" && <label><span>昵称</span><input value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" maxLength={24} required placeholder="怎么称呼你" /></label>}<label><span>邮箱</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required placeholder="name@example.com" /></label><label><span>密码</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required placeholder="至少 8 位" /></label>{mode === "register" && <label><span>确认密码</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required placeholder="请再次输入密码" /></label>}<p className="points-help">账号、密码及记录保存在本机，断网也能使用；联网后自动同步。请勿在共享设备使用。</p>{message && <div className="auth-error" role="alert">{message}</div>}<button className="button primary" disabled={busy}>{busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}</button></form><button className="auth-switch" disabled={busy} onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setConfirmPassword(""); setMessage(""); }}>{mode === "login" ? "还没有账号？创建一个" : "已有账号？直接登录"}</button></main>;
+  const enterGuest = async () => {
+    setBusy(true); setMessage("");
+    try { await api("/api/guest/start", { method: "POST" }); await onAuthenticated(); }
+    catch(reason) { setMessage(reason instanceof Error ? reason.message : "游客空间无法打开"); }
+    finally { setBusy(false); }
+  };
+  return <main className="signin-screen">
+    <img className="brand-mark" src={withRuntimeBase("/app-icon.png")} alt="" />
+    <span className="eyebrow">欢迎来到拾光记事</span><h1>把今天，安放得刚刚好。</h1>
+    <p>{migrateGuest ? "注册后，游客记录会迁移到新账号并同步到服务器。" : "使用用户名创建自己的空间，也可以先以游客身份使用。"}</p>
+    <form className="auth-form" onSubmit={submit}>
+      <label><span>用户名</span><input type="text" value={email} onChange={event => setEmail(event.target.value)} autoComplete="username" required maxLength={mode === "register" ? 32 : 160} placeholder={mode === "register" ? "2–32 位中文、字母、数字、_ 或 -" : "输入用户名；已有邮箱账号可用原账号登录"} /></label>
+      {mode === "register" && <label><span>显示名称（选填）</span><input value={name} onChange={event => setName(event.target.value)} autoComplete="nickname" maxLength={24} placeholder="默认使用用户名" /></label>}
+      <label><span>密码</span><input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={8} maxLength={128} required placeholder="至少 8 位" /></label>
+      {mode === "register" && <label><span>确认密码</span><input type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required placeholder="请再次输入密码" /></label>}
+      <p className="points-help">{migrateGuest ? "请确认用户名和密码。迁移失败时，本机备份仍会保留。" : "账号凭据在本机加密保存，断网可继续使用；请勿在共享设备使用。"}</p>
+      {message && <div className="auth-error" role="alert">{message}</div>}
+      <button className="button primary" disabled={busy}>{busy ? "请稍候…" : mode === "login" ? "登录" : migrateGuest ? "注册并同步游客记录" : "注册并登录"}</button>
+    </form>
+    {!migrateGuest && <><button className="button secondary" disabled={busy} onClick={() => void enterGuest()}>游客模式</button><p className="points-help">游客的所有记录只保存在本机，不会上传服务器；之后注册账号可迁移这些记录。清除应用或浏览器数据会丢失本机记录，请及时备份。</p><button className="auth-switch" disabled={busy} onClick={() => { setMode(value => value === "login" ? "register" : "login"); setConfirmPassword(""); setMessage(""); }}>{mode === "login" ? "还没有账号？创建一个" : "已有账号？直接登录"}</button></>}
+    {migrateGuest && <button className="button secondary" disabled={busy} onClick={onCancel}>返回游客空间</button>}
+  </main>;
 }
 
 export default function TodoApp() {
   const [data, setData] = useState<Bootstrap | null>(null);
-  const [syncStatus, setSyncStatus] = useState({ offline: false, pending: 0, issue: '' });
+  const [syncStatus, setSyncStatus] = useState({ guest: false, offline: false, pending: 0, issue: '' });
   const previousProfileId = useRef<string | null>(null);
   useEffect(() => {
     readDeviceLogin();
@@ -602,6 +623,7 @@ export default function TodoApp() {
     const timer = window.setInterval(retry, 30000);
     return () => { window.removeEventListener('jishi-local-data', receive); window.removeEventListener('online', retry); window.removeEventListener('focus', retry); window.clearInterval(timer); };
   }, []);
+  const [guestSignup, setGuestSignup] = useState(false);
   const [section, setSection] = useState<Section>("todos");
   const [statusFilter, setStatusFilter] = useState<"active" | "completed">("active");
   const [query, setQuery] = useState(""); const [categoryFilter, setCategoryFilter] = useState("");
@@ -840,7 +862,7 @@ export default function TodoApp() {
   const saveProfile = async (patch: { name?: string; avatarUrl?: string }) => {
     if (!data) return;
     const result = await api<{ user: Profile }>("/api/profile", { method: "PATCH", body: JSON.stringify(patch) });
-    setData((old) => old ? ({ ...old, user: { ...result.user, settings: old.user.settings } }) : old); flash("账户资料已同步");
+    setData((old) => old ? ({ ...old, user: { ...result.user, settings: old.user.settings } }) : old); flash(data.user.guest ? "游客资料已保存在本机" : "账户资料已同步");
   };
   const previewSettings = (next: SettingsShape) => setData((old) => old ? ({ ...old, user: { ...old.user, settings: normalizedAppearance(next) } }) : old);
   const saveAppearance = async (next: SettingsShape) => {
@@ -851,6 +873,10 @@ export default function TodoApp() {
   const uploadImage = async (file: File, kind: "avatar" | "background") => {
     if (!data) return;
     if (kind === "background") { await writeLocalBackground(data.user.id, file); replaceBackgroundObjectUrl(file); flash("背景图片已保存在本机"); return; }
+    if (data.user.guest) {
+      const image = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("头像无法读取")); reader.readAsDataURL(file); });
+      await saveProfile({ avatarUrl: image }); return;
+    }
     const response = await fetch(apiUrl("/api/media?kind=avatar"), { method: "PUT", credentials: "include", headers: { "Content-Type": file.type, 'X-Jishi-Account-Email': data.user.email }, body: file });
     const result = await response.json(); if (!response.ok) throw new Error(result.error || "头像上传失败");
     await saveProfile({ avatarUrl: result.url });
@@ -860,6 +886,7 @@ export default function TodoApp() {
     await writeLocalBackground(data.user.id, null); replaceBackgroundObjectUrl(null); flash("本机背景已移除");
   };
 
+  if (guestSignup && data?.user.guest) return <AuthScreen migrateGuest onCancel={() => setGuestSignup(false)} onAuthenticated={async () => { setGuestSignup(false); await load(); }} />;
   if (!data && error) return <AuthScreen onAuthenticated={load} />;
   if (!data) return <main className="loading-screen"><div className="brand-mark pulse">记</div><p>{error || "正在整理你的今天…"}</p>{error && <button className="button secondary" onClick={() => void load()}>重新连接</button>}</main>;
 
@@ -872,11 +899,12 @@ export default function TodoApp() {
       <div className="brand"><img className="brand-mark small" src={withRuntimeBase("/app-icon.png")} alt="" /><div><strong>拾光记事</strong><small>把今天安放好</small></div></div>
       <nav className="side-nav" aria-label="主导航"><button className={section === "points" ? "active" : ""} onClick={() => setSection("points")}><Check size={19} /><span>打卡 · 商店</span></button><button className={section === "todos" ? "active" : ""} onClick={() => setSection("todos")}><LayoutList size={19} /><span>待办</span><b>{activeCount}</b></button><button className={section === "routines" ? "active" : ""} onClick={() => setSection("routines")}><CalendarDays size={19} /><span>定期任务</span></button><button className={section === "diary" ? "active" : ""} onClick={() => setSection("diary")}><BookOpen size={19} /><span>日记</span></button><button className={section === "mine" ? "active" : ""} onClick={() => setSection("mine")}><CircleUserRound size={19} /><span>我的</span></button></nav>
       <div className="sidebar-groups"><span>快捷查看</span><button onClick={() => { setSection("todos"); setStatusFilter("completed"); }}><Check size={17} />已完成</button><button onClick={() => setSection("trash")}><Trash2 size={17} />回收站</button><button onClick={() => setSection("settings")}><Settings size={17} />设置</button></div>
-      <div className="sidebar-profile"><span className="avatar">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="38px" unoptimized /> : <DefaultAvatar />}</span><div><strong>{data.user.name}</strong><small>{syncStatus.offline ? "本机保存" : syncStatus.pending ? "等待同步" : syncStatus.issue ? "同步暂停" : "已同步"}</small></div><ChevronRight size={17} /></div>
+      <div className="sidebar-profile"><span className="avatar">{data.user.avatarUrl ? <Image src={data.user.avatarUrl.startsWith("data:") ? data.user.avatarUrl : apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="38px" unoptimized /> : <DefaultAvatar />}</span><div><strong>{data.user.name}</strong><small>{syncStatus.guest ? "游客 · 仅本机" : syncStatus.offline ? "本机保存" : syncStatus.pending ? "等待同步" : syncStatus.issue ? "同步暂停" : "已同步"}</small></div><ChevronRight size={17} /></div>
     </aside>
 
     <main className="main-surface">
-      {(syncStatus.offline || syncStatus.pending || syncStatus.issue) && <div className="offline-status" role="status"><span>{syncStatus.issue || `${syncStatus.offline ? '离线使用 · 内容保存在本机' : '正在同步'}${syncStatus.pending ? ` · ${syncStatus.pending} 项待同步` : ''}`}</span><button className="text-button" onClick={exportLocalBackup}>备份本机内容</button><button className="text-button" onClick={() => void reconnect()}>重试同步</button></div>}
+      {data.user.guest && <div className="offline-status" role="status"><span>游客模式：所有记录仅保存在本机，不会上传服务器。{syncStatus.issue && ` ${syncStatus.issue}`}</span><button className="text-button" onClick={exportLocalBackup}>备份本机记录</button><button className="text-button" onClick={() => setGuestSignup(true)}>注册并同步游客记录</button></div>}
+      {!syncStatus.guest && (syncStatus.offline || syncStatus.pending || syncStatus.issue) && <div className="offline-status" role="status"><span>{syncStatus.issue || `${syncStatus.offline ? '离线使用 · 内容保存在本机' : '正在同步'}${syncStatus.pending ? ` · ${syncStatus.pending} 项待同步` : ''}`}</span><button className="text-button" onClick={exportLocalBackup}>备份本机内容</button><button className="text-button" onClick={() => void reconnect()}>重试同步</button></div>}
       {(section === "todos" || section === "trash") && <>
         <header className="topbar"><div><span className="eyebrow">{section === "trash" ? "30 天内可恢复" : todayLabel}</span><h1>{section === "trash" ? "回收站" : statusFilter === "active" ? "今天，先做什么？" : "完成记录"}</h1></div><div className="top-actions"><button className="icon-button mobile-menu" aria-label="打开待办快捷菜单" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((value) => !value)}><Menu size={21} /></button>{mobileMenuOpen && <div className="mobile-quick-menu" role="menu"><button role="menuitem" onClick={() => { setSection("todos"); setStatusFilter("active"); setMobileMenuOpen(false); }}><LayoutList size={16} />未完成待办</button><button role="menuitem" onClick={() => { setSection("todos"); setStatusFilter("completed"); setMobileMenuOpen(false); }}><Check size={16} />已完成待办</button><button role="menuitem" onClick={() => { setSection("trash"); setMobileMenuOpen(false); }}><Trash2 size={16} />回收站</button><button role="menuitem" onClick={() => { setSection("settings"); setMobileMenuOpen(false); }}><Settings size={16} />设置</button></div>}<button className={`button notification-button ${notificationEnabled ? "enabled" : ""}`} aria-pressed={notificationEnabled} title={notificationEnabled ? "关闭本设备的消息栏提醒" : "开启本设备的消息栏提醒"} onClick={() => void toggleNotifications().catch((reason) => { setError(reason instanceof Error ? reason.message : "通知开启失败"); })}><Bell size={18} /><span>{notificationEnabled ? "提醒已开" : "提醒已关"}</span></button>{section !== "trash" && <button className="button primary" onClick={() => setEditor("new")}><Plus size={19} />新建待办</button>}</div></header>
         {section !== "trash" && <div className="status-tabs"><button className={statusFilter === "active" ? "active" : ""} onClick={() => setStatusFilter("active")}>未完成 <span>{activeCount}</span></button><button className={statusFilter === "completed" ? "active" : ""} onClick={() => setStatusFilter("completed")}>已完成 <span>{data.todos.filter((todo) => todo.status === "completed").length}</span></button></div>}
@@ -886,8 +914,8 @@ export default function TodoApp() {
       </>}
       {section === "routines" && <ScheduleBoard items={data.schedules} records={data.scheduleRecords} cardOpacity={settings.cardOpacity} acrylic={settings.acrylic} onCreate={createSchedule} onUpdate={updateSchedule} onComplete={completeSchedule} onDeleteForever={deleteScheduleForever} />}
       {section === "points" && data.points && <PointsBoard userId={data.user.id} value={data.points} request={(path, method, body) => api<PointsData>(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })} onChange={points => setData(old => old ? { ...old, points } : old)} />}
-      {section === "diary" && <DiaryBoard entries={data.diaryEntries} onSave={saveDiary} />}
-      {(section === "mine" || section === "settings") && <ProfileSettings data={data} settings={settings} section={section} notificationEnabled={notificationEnabled} onToggleNotifications={toggleNotifications} onTestNotifications={testNotifications} onSection={setSection} onSaveProfile={saveProfile} onSaveAppearance={saveAppearance} onPreviewSettings={previewSettings} onUpload={uploadImage} onRemoveBackground={removeBackground} onReload={load} setData={setData} flash={flash} />}
+      {section === "diary" && <DiaryBoard entries={data.diaryEntries} onSave={saveDiary} guest={data.user.guest} />}
+      {(section === "mine" || section === "settings") && <ProfileSettings data={data} settings={settings} section={section} onGuestRegister={() => setGuestSignup(true)} notificationEnabled={notificationEnabled} onToggleNotifications={toggleNotifications} onTestNotifications={testNotifications} onSection={setSection} onSaveProfile={saveProfile} onSaveAppearance={saveAppearance} onPreviewSettings={previewSettings} onUpload={uploadImage} onRemoveBackground={removeBackground} onReload={load} setData={setData} flash={flash} />}
       {selected && <DetailPanel todo={selected} category={selected.categoryId ? categoryMap.get(selected.categoryId) : undefined} preset={selected.reminderPresetId ? presetMap.get(selected.reminderPresetId) : undefined} onClose={() => setSelectedId(null)} onEdit={() => setEditor(selected)} onStatus={(status) => void mutateTodo(selected.id, { status })} onDeleteForever={() => void deleteForever(selected)} />}
     </main>
 
@@ -918,9 +946,9 @@ function PresetSettingRow({ preset, canDelete, onSave, onDelete }: { preset: Pre
   return <div className="manage-row preset"><input aria-label={`${preset.name}提醒组名称`} value={name} maxLength={20} onChange={(event) => setName(event.target.value)} /><ReminderOffsetsEditor value={offsets} onChange={setOffsets} compact /><button className="button secondary compact" disabled={busy || !name.trim() || !offsets.length} onClick={() => void run(() => onSave(preset.id, { name, offsets }))}>保存</button><button className="icon-button danger-quiet" disabled={busy || !canDelete} title={canDelete ? "删除提醒组" : "至少保留一个提醒组"} onClick={() => void run(() => onDelete(preset.id))}><Trash2 size={17} /></button>{preset.isDefault ? <small className="default-badge">默认</small> : null}{error && <small className="row-error">{error}</small>}</div>;
 }
 
-function ProfileSettings({ data, settings, section, notificationEnabled, onToggleNotifications, onTestNotifications, onSection, onSaveProfile, onSaveAppearance, onPreviewSettings, onUpload, onRemoveBackground, onReload, setData, flash }: {
+function ProfileSettings({ data, settings, section, onGuestRegister, notificationEnabled, onToggleNotifications, onTestNotifications, onSection, onSaveProfile, onSaveAppearance, onPreviewSettings, onUpload, onRemoveBackground, onReload, setData, flash }: {
   data: Bootstrap; settings: SettingsShape; section: "mine" | "settings"; notificationEnabled: boolean;
-  onToggleNotifications: () => Promise<void>; onTestNotifications: () => Promise<void>; onSection: (value: Section) => void;
+  onGuestRegister: () => void; onToggleNotifications: () => Promise<void>; onTestNotifications: () => Promise<void>; onSection: (value: Section) => void;
   onSaveProfile: (patch: { name?: string; avatarUrl?: string }) => Promise<void>;
   onSaveAppearance: (settings: SettingsShape) => Promise<void>;
   onPreviewSettings: (settings: SettingsShape) => void;
@@ -966,11 +994,18 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
   const exportSection = async (target: string, format: "json" | "md") => {
     setDataError("");
     const anchor = document.createElement("a");
+    if (data.user.guest) {
+      const local = await api<Record<string, unknown>>(`/api/data/export?section=${target}`);
+      const content = JSON.stringify({ schemaVersion: 1, section: target, data: local }, null, 2);
+      const blob = new Blob([format === "md" ? `# 拾光记事 · ${target}\n\n\`\`\`json\n${content}\n\`\`\`\n` : content], { type: format === "md" ? "text/markdown" : "application/json" });
+      const url = URL.createObjectURL(blob); anchor.href = url; anchor.download = `拾光记事-游客-${target}.${format}`; anchor.click(); URL.revokeObjectURL(url); flash("游客内容已从本机导出"); return;
+    }
     anchor.href = apiUrl(`/api/data/export?section=${target}&format=${format}`); anchor.download = `jishi-${target}.${format}`;
     document.body.appendChild(anchor); anchor.click(); anchor.remove(); flash(`${format.toUpperCase()} 文件已开始导出`);
   };
   const importSection = async (target: string, file: File) => {
     setDataError("");
+    if (data.user.guest) throw new Error("游客模式请先备份本机内容，注册并同步后可使用分区导入");
     if (file.size > 10 * 1024 * 1024) throw new Error("导入文件不能超过 10MB");
     if (!window.confirm(`导入会替换当前账户的对应数据（${target}），是否继续？`)) return;
     const text = await file.text(); let payload: unknown; try { payload = JSON.parse(text); } catch { throw new Error("请选择有效的 JSON 备份文件"); }
@@ -978,10 +1013,10 @@ function ProfileSettings({ data, settings, section, notificationEnabled, onToggl
   };
   const cropModal = cropTarget && <ImageCropper file={cropTarget.file} kind={cropTarget.kind} onCancel={() => setCropTarget(null)} onConfirm={uploadCropped} />;
 
-  if (section === "mine") return <><div className="profile-page"><header className="topbar"><div><span className="eyebrow">个人中心</span><h1>我的</h1></div></header><section className="profile-hero"><label className="avatar large" aria-label="更换头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="80px" unoptimized /> : <DefaultAvatar size={38} />}<input aria-label="选择头像图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /><span><ImagePlus size={15} /></span></label><div><h2>{data.user.name}</h2><p>{data.user.email}</p><span className="sync-badge"><Check size={14} />内容保存在本机，联网后自动同步</span></div></section><section className="quick-grid"><button onClick={() => onSection("settings")}><span><Palette size={20} /></span><div><strong>外观与设置</strong><small>主题、卡片与提醒</small></div><ChevronRight size={18} /></button><button onClick={() => onSection("trash")}><span><ArchiveRestore size={20} /></span><div><strong>回收站</strong><small>{data.todos.filter((todo) => todo.status === "deleted").length} 个待办</small></div><ChevronRight size={18} /></button></section><section className="insight-card"><span className="eyebrow">本周小结</span><div><strong>{data.todos.filter((todo) => todo.status === "completed").length}</strong><p>件事情已经妥善完成。保持自己的节奏，就很好。</p></div></section><button className="button secondary signout" onClick={async () => { const saved = readDeviceLogin(); await api("/api/auth/logout", { method: "POST" }); clearNativeReminders(); writeDeviceLogin({ ...saved, password: "", rememberPassword: false, autoLogin: false }); window.location.reload(); }}>退出当前账号</button></div>{cropModal}</>;
+  if (section === "mine") return <><div className="profile-page"><header className="topbar"><div><span className="eyebrow">个人中心</span><h1>我的</h1></div></header><section className="profile-hero"><label className="avatar large" aria-label="更换头像">{data.user.avatarUrl ? <Image src={data.user.avatarUrl.startsWith("data:") ? data.user.avatarUrl : apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="80px" unoptimized /> : <DefaultAvatar size={38} />}<input aria-label="选择头像图片" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /><span><ImagePlus size={15} /></span></label><div><h2>{data.user.name}</h2><p>{data.user.guest ? "游客" : data.user.username || data.user.email}</p><span className="sync-badge"><Check size={14} />{data.user.guest ? "记录仅存本机，不会上传服务器" : "内容保存在本机，联网后自动同步"}</span></div></section><section className="quick-grid"><button onClick={() => onSection("settings")}><span><Palette size={20} /></span><div><strong>外观与设置</strong><small>主题、卡片与提醒</small></div><ChevronRight size={18} /></button><button onClick={() => onSection("trash")}><span><ArchiveRestore size={20} /></span><div><strong>回收站</strong><small>{data.todos.filter((todo) => todo.status === "deleted").length} 个待办</small></div><ChevronRight size={18} /></button></section><section className="insight-card"><span className="eyebrow">本周小结</span><div><strong>{data.todos.filter((todo) => todo.status === "completed").length}</strong><p>件事情已经妥善完成。保持自己的节奏，就很好。</p></div></section>{data.user.guest && <button className="button primary" onClick={onGuestRegister}>注册并同步游客记录</button>}<button className="button secondary signout" onClick={async () => { const saved = readDeviceLogin(); await api("/api/auth/logout", { method: "POST" }); clearNativeReminders(); writeDeviceLogin({ ...saved, password: "", rememberPassword: false, autoLogin: false }); window.location.reload(); }}>{data.user.guest ? "退出游客空间（保留本机记录）" : "退出当前账号"}</button></div>{cropModal}</>;
   return <><div className="settings-page"><header className="topbar"><div><span className="eyebrow">只属于你的拾光记事</span><h1>设置</h1></div></header>
-    <section className="settings-card"><div className="settings-title"><UserRound size={20} /><div><h2>个人资料</h2><p>默认头像会自动显示，也可以裁选图片并上传到服务器</p></div></div><div className="profile-settings-row"><label className="avatar settings-avatar" aria-label="上传自定义头像">{data.user.avatarUrl ? <Image src={apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="52px" unoptimized /> : <DefaultAvatar size={27} />}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /></label><div className="inline-form"><input value={name} maxLength={24} onChange={(event) => setName(event.target.value)} /><button className="button primary" onClick={() => void onSaveProfile({ name })}>保存姓名</button></div></div></section>
-    <section className="settings-card"><div className="settings-title"><CircleUserRound size={20} /><div><h2>本机账号与离线数据</h2><p>密码加密保存在当前设备。离线修改先保存，联网后同步；退出账号不会删除待同步内容。</p></div></div><button className="button secondary clear-login" onClick={() => { writeDeviceLogin(defaultDeviceLogin); void forgetLocalCredentials().then(() => flash("已清除本机保存的密码；个人记录和待同步内容保留")); }}>清除本机保存的密码</button></section>
+    <section className="settings-card"><div className="settings-title"><UserRound size={20} /><div><h2>个人资料</h2><p>{data.user.guest ? "头像和资料仅在本机保存；注册后随游客记录迁移" : "默认头像会自动显示，也可以裁选图片并上传到服务器"}</p></div></div><div className="profile-settings-row"><label className="avatar settings-avatar" aria-label="上传自定义头像">{data.user.avatarUrl ? <Image src={data.user.avatarUrl.startsWith("data:") ? data.user.avatarUrl : apiUrl(data.user.avatarUrl)} alt="用户头像" fill sizes="52px" unoptimized /> : <DefaultAvatar size={27} />}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) chooseImage(file, "avatar"); }} /></label><div className="inline-form"><input value={name} maxLength={24} onChange={(event) => setName(event.target.value)} /><button className="button primary" onClick={() => void onSaveProfile({ name })}>保存姓名</button></div></div></section>
+    <section className="settings-card"><div className="settings-title"><CircleUserRound size={20} /><div><h2>本机账号与离线数据</h2><p>{data.user.guest ? "游客无需账号密码，记录只保存在当前设备；退出游客空间会保留本机内容。" : "密码加密保存在当前设备。离线修改先保存，联网后同步；退出账号不会删除待同步内容。"}</p></div></div><button className="button secondary clear-login" onClick={() => { writeDeviceLogin(defaultDeviceLogin); void forgetLocalCredentials().then(() => flash("已清除本机保存的密码；个人记录和待同步内容保留")); }}>清除本机保存的密码</button></section>
     <section className="settings-card">
       <div className="settings-title"><Palette size={20} /><div><h2>主题与背景</h2><p>外观和背景图片只保存在当前设备，不上传服务器</p></div></div>
       <div className="theme-options">{(["linen", "sage", "night"] as const).map((theme) => <button key={theme} className={`${theme} ${settings.theme === theme ? "selected" : ""}`} onClick={() => void onSaveAppearance({ ...settings, theme })}><span /><b>{theme === "linen" ? "暖白" : theme === "sage" ? "青苔" : "夜墨"}</b></button>)}</div>

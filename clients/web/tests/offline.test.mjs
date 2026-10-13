@@ -3,6 +3,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { OfflineClient } from '../app/offline.mjs';
+import { GUEST, guestDefaults, settleGuestPoints, redeemGuest, guestExport } from '../app/guest.mjs';
 
 function fixture() {
   const records = new Map(); let active = '', connected = false, loseResponse = false;
@@ -67,8 +68,8 @@ test('a stale cookie from another account is replaced before uploading the selec
 test('older WebViews without structuredClone or randomUUID can persist and synchronize offline data', async () => {
   const module = { exports: {} };
   const source = await readFile(new URL('../app/offline.mjs', import.meta.url), 'utf8');
-  vm.runInNewContext(source.replace(/^export /gm, '') + '\nmodule.exports = { OfflineClient };', {
-    module, URL, Uint8Array, TextEncoder, TextDecoder,
+  vm.runInNewContext(source.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '') + '\nmodule.exports = { OfflineClient };', {
+    module, URL, Uint8Array, TextEncoder, TextDecoder, GUEST, guestDefaults, settleGuestPoints, redeemGuest, guestExport,
     crypto: { subtle: crypto.subtle, getRandomValues: crypto.getRandomValues.bind(crypto) },
   });
   const f = fixture(), client = f.newClient(module.exports.OfflineClient);

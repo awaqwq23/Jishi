@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import {mkdtemp,realpath,rm,lstat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,sep} from 'node:path';
+import {settleGuestPoints} from '../../clients/web/app/guest.mjs';
+import {OfflineClient} from '../../clients/web/app/offline.mjs';
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from "miniflare";
 
 let runtime, db, alice, bob;
@@ -30,6 +32,88 @@ before(async () => {
   runtime = new Miniflare(convertV4MiniflareOptions({ modules: true, scriptPath: fileURLToPath(new URL("../.wrangler/dry-run/index.js", import.meta.url)), compatibilityDate: "2026-05-22", d1Databases: ["DB"], r2Buckets: ["MEDIA"], bindings: { AUTH_SECRET: secret, ALLOWED_ORIGINS: origin }, log: new Log(LogLevel.NONE) }));
   db = await runtime.getD1Database("DB");
   alice = await account("Alice"); bob = await account("Bob");
+});
+
+test('username registration requires matching passwords, retries safely and keeps legacy login', async () => {
+  const username='拾光_'+randomUUID().slice(0,8),password='Guest-password-123',registrationId=randomUUID();
+  await json(await call('/api/auth/register',{method:'POST',body:{username,password,confirmPassword:'wrong'}}),400);
+  assert.equal(await db.prepare('SELECT id FROM users WHERE username=?').bind(username).first(),null);
+  const credentials={username,password,confirmPassword:password,registrationId};
+  const first=await json(await call('/api/auth/register',{method:'POST',body:credentials}),201);
+  const retry=await json(await call('/api/auth/register',{method:'POST',body:credentials}),201);
+  assert.equal(first.user.id,retry.user.id);assert.equal(first.user.username,username);
+  await json(await call('/api/auth/register',{method:'POST',body:{...credentials,registrationId:randomUUID()}}),409);
+  const logged=await call('/api/auth/login',{method:'POST',body:{username,password}});await json(logged,200);
+  const data=await json(await call('/api/bootstrap',{cookie:logged.headers.get('set-cookie').split(';')[0]}),200);assert.equal(data.user.username,username);
+  await json(await call('/api/auth/login',{method:'POST',body:{username,password:'wrong'}}),401);
+  await json(await call('/api/auth/login',{method:'POST',body:{username:alice.email,password:alice.password}}),200);
+  const concurrent={username:'parallel_'+randomUUID().slice(0,8),password,confirmPassword:password,registrationId:randomUUID()};
+  const simultaneous=await Promise.all([call('/api/auth/register',{method:'POST',body:concurrent}),call('/api/auth/register',{method:'POST',body:concurrent})]);
+  const values=await Promise.all(simultaneous.map(response=>json(response,201)));assert.equal(values[0].user.id,values[1].user.id);
+});
+
+function guestSnapshot(owner) {
+  const data=structuredClone(owner.bootstrap),now=new Date().toISOString(),today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+  data.user.guest=true;
+  data.todos=[{id:randomUUID(),title:'游客已完成任务',content:'本机内容',notes:'备注',priority:'normal',status:'completed',createdAt:now,updatedAt:now,completedAt:now,deletedAt:null,deadline:new Date(Date.now()+3600000).toISOString(),categoryId:data.categories[0].id,reminderPresetId:data.reminderPresets[0].id,reminderOffsets:[10]}];
+  data.schedules=[{id:randomUUID(),title:'游客习惯',kind:'habit',notes:'',recurrence:'daily',startDate:today,timeOfDay:'23:00',weekdays:[],status:'active',createdAt:now,updatedAt:now,deletedAt:null}];
+  data.scheduleRecords=[{id:randomUUID(),itemId:data.schedules[0].id,occurrenceDate:today,completedAt:now}];
+  data.diaryEntries=[{id:randomUUID(),entryDate:today,content:'游客日记',createdAt:now,updatedAt:now}];
+  data.points.enabled=true;data.points.startedAt=now;data.points.settledDate=today;
+  data.points.products=[{id:randomUUID(),name:'游客商品',cost:5}];
+  data.points.ledger=[{id:'signin:'+today,eventKey:'signin:'+today,amount:5,units:5,label:'签到',createdAt:now},{id:'redeem:guest-retry-0001',eventKey:'redeem:guest-retry-0001',amount:-5,units:-5,label:'兑换：游客商品',createdAt:now}];
+  settleGuestPoints(data);return data;
+}
+
+test('guest snapshot migrates every module and points once without accepting cross-user references', async () => {
+  const owner=await account('GuestImport'),snapshot=guestSnapshot(owner),migrationId=randomUUID();
+  const body={migrationId,snapshot};
+  await json(await call('/api/guest/import',{cookie:owner.cookie,method:'POST',headers:{'X-Jishi-Account-Email':bob.email},body}),409);
+  const rejected=structuredClone(body);rejected.snapshot.todos[0].categoryId=bob.bootstrap.categories[0].id;
+  await json(await call('/api/guest/import',{cookie:owner.cookie,method:'POST',body:rejected}),400);
+  const concurrent = await Promise.all([call('/api/guest/import',{cookie:owner.cookie,method:'POST',body}),call('/api/guest/import',{cookie:owner.cookie,method:'POST',body})]);
+  for (const response of concurrent) await json(response,200);
+  const repeated=await json(await call('/api/guest/import',{cookie:owner.cookie,method:'POST',body}),200);assert.equal(repeated.repeated,true);
+  const value=await json(await call('/api/bootstrap',{cookie:owner.cookie}),200);
+  assert.equal(value.todos.length,1);assert.equal(value.todos[0].deadline,snapshot.todos[0].deadline);
+  assert.equal(value.schedules.length,1);assert.equal(value.scheduleRecords.length,1);assert.equal(value.diaryEntries[0].content,'游客日记');
+  assert.equal(value.points.balance,snapshot.points.balance);assert.equal(value.points.products.length,1);assert.equal(value.points.checkedIn,true);
+  await json(await call('/api/guest/import',{cookie:owner.cookie,method:'POST',body:{...body,migrationId:randomUUID()}}),409);
+  const busy=await account('GuestOccupied');await json(await call('/api/todos',{cookie:busy.cookie,method:'POST',body:{title:'保留云端内容'}}),201);
+  await json(await call('/api/guest/import',{cookie:busy.cookie,method:'POST',body:{migrationId:randomUUID(),snapshot:guestSnapshot(busy)}}),409);
+  assert.equal((await json(await call('/api/bootstrap',{cookie:busy.cookie}),200)).todos[0].title,'保留云端内容');
+});
+
+test('failed atomic guest migration preserves local retry identity and empty cloud account',async()=>{
+  const owner=await account('GuestRollback'),snapshot=guestSnapshot(owner),body={migrationId:randomUUID(),snapshot};
+  await db.exec(`CREATE TRIGGER guest_insert_failure BEFORE INSERT ON diary_entries WHEN NEW.user_id='${owner.user.id}' BEGIN SELECT RAISE(ABORT, 'simulated migration failure'); END;`);
+  try{
+    await json(await call('/api/guest/import',{cookie:owner.cookie,method:'POST',body}),500);
+    assert.equal(await db.prepare('SELECT migration_id FROM guest_migrations WHERE user_id=?').bind(owner.user.id).first(),null);
+    assert.equal((await json(await call('/api/bootstrap',{cookie:owner.cookie}),200)).todos.length,0);
+  }finally{await db.exec('DROP TRIGGER guest_insert_failure;');}
+  await json(await call('/api/guest/import',{cookie:owner.cookie,method:'POST',body}),200);
+});
+
+test('real worker accepts guest-client registration and complete migration without guest network requests',async()=>{
+  const storage=new Map();let active='',cookie='',requests=0;
+  const client=new OfflineClient({storage:{async get(key){return structuredClone(storage.get(key));},async put(key,value){storage.set(key,structuredClone(value));}},active:()=>active,setActive:value=>{active=value;},transport:async(path,init={})=>{
+    requests++;const response=await call(path,{cookie,method:init.method||'GET',body:init.body,headers:init.headers||{}});
+    if(response.headers.get('set-cookie'))cookie=response.headers.get('set-cookie').split(';')[0];
+    const body=await response.json();if(!response.ok)throw Object.assign(new Error(body.error),{status:response.status});return body;
+  }});
+  await client.startGuest();
+  await client.request('/api/points/rules',{method:'PUT',body:JSON.stringify({signinReward:5,signinPenalty:0,taskReward:10,taskPenalty:0,habitReward:7,habitPenalty:0})});
+  const result=await client.request('/api/todos',{method:'POST',body:JSON.stringify({title:'整条链路的游客记录'})});
+  await client.request('/api/todos/'+result.todo.id,{method:'PATCH',body:JSON.stringify({status:'completed'})});
+  await client.request('/api/points/checkin',{method:'POST',body:'{}'});
+  await client.request('/api/profile',{method:'PATCH',body:JSON.stringify({avatarUrl:'data:image/png;base64,iVBORw0KGgo='})});
+  const before=client.account.data.points.balance;assert.equal(requests,0);
+  const username='full_guest_'+randomUUID().slice(0,8),password='Guest-password-123';
+  await client.authenticate('register',{username,password,confirmPassword:password});await client.sync();
+  assert.equal(client.account.migration,null);assert.equal(client.status().pending,0);
+  assert.equal(client.account.data.user.username,username);assert.equal(client.account.data.todos[0].title,'整条链路的游客记录');
+  assert.equal(client.account.data.points.balance,before);assert.ok(client.account.data.user.avatarUrl.startsWith('data:image/png'));
 });
 after(async () => { await runtime?.dispose(); });
 

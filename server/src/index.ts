@@ -1,5 +1,6 @@
 import { ApiError, clientTimestamp, requestOriginAllowed, checkRequestOrigin, limitAuth, readBytes, readJson, sameSecret, trustedGateway } from "./security";
 import { beijingDate, pointsSchema, pointsAction, pointsState, settlePoints } from "./points";
+import { importGuest, guestSchema } from './guest-import';
 
 export interface Env {
   DB: D1Database;
@@ -49,10 +50,11 @@ async function offlinePrecondition(request: Request, env: Env, user: User): Prom
 }
 
 const schema = [
+  ...guestSchema,
   ...pointsSchema,
   `CREATE TABLE IF NOT EXISTS auth_rate_limits (key TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS idx_auth_rate_limits_expiry ON auth_rate_limits(expires_at)`,
-  `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, avatar_url TEXT, settings_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, username TEXT, registration_id TEXT, avatar_url TEXT, settings_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS auth_credentials (user_id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS reminder_presets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, offsets_json TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
@@ -164,35 +166,57 @@ async function userFrom(request: Request, env: Env): Promise<User | null> {
 async function register(request: Request, env: Env) {
   await ensureDb(env);
   const body = await readJson(request, 4096);
-  const email = String(body.email || "").trim().toLowerCase();
+  const username = body.username === undefined ? null : String(body.username).trim().normalize('NFC').toLowerCase();
+  const email = username || String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
   const name = String(body.name || email.split("@")[0]).trim().slice(0, 24);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160) return response(request, env, { error: "请输入有效邮箱地址" }, 400);
+  if (username !== null ? !/^[a-z0-9_\-\u3400-\u9fff]{2,32}$/u.test(username) : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160) return response(request, env, { error: "用户名应为 2 至 32 位中文、字母、数字、下划线或短横线" }, 400);
+  // Legacy email clients retain their original payload; username registration
+  // requires the confirmation on both the client and server.
+  if ((username !== null || body.confirmPassword !== undefined) && body.confirmPassword !== password) throw new ApiError(400, '两次输入的密码不一致');
+  const registrationId = body.registrationId === undefined ? null : String(body.registrationId);
+  if (registrationId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(registrationId)) throw new ApiError(400, '注册标识无效');
   if (password.length < 8 || password.length > 128) return response(request, env, { error: "密码长度应为 8 至 128 位" }, 400);
   if (!name) return response(request, env, { error: "请输入昵称" }, 400);
   await limitAuth(request, env, email, "register");
   // Validate the signing configuration before committing an account.
   await authKey(env);
-  const exists = await env.DB.prepare("SELECT user_id FROM auth_credentials WHERE email=?").bind(email).first();
-  if (exists) return response(request, env, { error: "该邮箱已经注册" }, 409);
+  const exists = await env.DB.prepare("SELECT a.user_id,a.password_hash,a.password_salt,u.registration_id,u.name,u.username FROM auth_credentials a JOIN users u ON u.id=a.user_id WHERE a.email=?").bind(email).first<{user_id:string;password_hash:string;password_salt:string;registration_id:string|null;name:string;username:string|null}>();
+  if (exists) {
+    if (registrationId && exists.registration_id === registrationId && await sameSecret(await passwordHash(password, Uint8Array.from(exists.password_salt.match(/.{2}/g) || [], part => parseInt(part,16))), exists.password_hash)) {
+      const user = { id: exists.user_id, email, name: exists.name, username: exists.username };
+      return authResponse(request, env, { user }, sessionCookie(request, await createSession(env, user)), 201);
+    }
+    return response(request, env, { error: "该用户名或账号已经注册" }, 409);
+  }
   const id = crypto.randomUUID(); const now = new Date().toISOString(); const salt = crypto.getRandomValues(new Uint8Array(16));
   const hash = await passwordHash(password, salt);
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO users (id,email,name,created_at,updated_at) VALUES (?,?,?,?,?)").bind(id, email, name, now, now),
-    env.DB.prepare("INSERT INTO auth_credentials (user_id,email,password_hash,password_salt,created_at) VALUES (?,?,?,?,?)").bind(id, email, hash, hex(salt), now),
-  ]);
-  const user = { id, email, name }; const token = await createSession(env, user);
+  try {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO users (id,email,name,username,registration_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)").bind(id, email, name, username, registrationId, now, now),
+      env.DB.prepare("INSERT INTO auth_credentials (user_id,email,password_hash,password_salt,created_at) VALUES (?,?,?,?,?)").bind(id, email, hash, hex(salt), now),
+    ]);
+  } catch (error) {
+    const conflict=await env.DB.prepare('SELECT u.id,u.email,u.name,u.username,u.registration_id,a.password_hash,a.password_salt FROM users u JOIN auth_credentials a ON a.user_id=u.id WHERE u.email=? OR u.registration_id=? LIMIT 1').bind(email,registrationId).first<{id:string;email:string;name:string;username:string|null;registration_id:string|null;password_hash:string;password_salt:string}>();
+    if(conflict&&registrationId&&conflict.email===email&&conflict.registration_id===registrationId&&await sameSecret(await passwordHash(password,Uint8Array.from(conflict.password_salt.match(/.{2}/g)||[],part=>parseInt(part,16))),conflict.password_hash)){
+      const user={id:conflict.id,email,name:conflict.name,username:conflict.username};
+      return authResponse(request,env,{user},sessionCookie(request,await createSession(env,user)),201);
+    }
+    if(conflict)throw new ApiError(409,'该用户名或注册标识已经使用');
+    throw error;
+  }
+  const user = { id, email, name, username }; const token = await createSession(env, user);
   return authResponse(request, env, { user }, sessionCookie(request, token), 201);
 }
 
 async function login(request: Request, env: Env) {
   await ensureDb(env);
-  const body = await readJson(request, 4096); const email = String(body.email || "").trim().toLowerCase(); const password = String(body.password || "");
+  const body = await readJson(request, 4096); const email = String(body.username ?? body.email ?? "").trim().normalize('NFC').toLowerCase(); const password = String(body.password || "");
   await limitAuth(request, env, email.slice(0, 160), "login");
-  if (email.length > 160 || password.length > 128) throw new ApiError(401, "邮箱或密码不正确");
-  const account = await env.DB.prepare("SELECT a.user_id,a.password_hash,a.password_salt,u.name FROM auth_credentials a JOIN users u ON u.id=a.user_id WHERE a.email=?").bind(email).first<{ user_id: string; password_hash: string; password_salt: string; name: string }>();
+  if (email.length > 160 || password.length > 128) throw new ApiError(401, "用户名或密码不正确");
+  const account = await env.DB.prepare("SELECT a.user_id,a.password_hash,a.password_salt,u.name,u.username FROM auth_credentials a JOIN users u ON u.id=a.user_id WHERE a.email=?").bind(email).first<{ user_id: string; password_hash: string; password_salt: string; name: string; username:string|null }>();
   if (!account || !await sameSecret(await passwordHash(password, Uint8Array.from(account.password_salt.match(/.{2}/g) || [], (part) => parseInt(part, 16))), account.password_hash)) return response(request, env, { error: "邮箱或密码不正确" }, 401);
-  const user = { id: account.user_id, email, name: account.name }; const token = await createSession(env, user);
+  const user = { id: account.user_id, email, name: account.name, username:account.username }; const token = await createSession(env, user);
   return authResponse(request, env, { user }, sessionCookie(request, token));
 }
 
@@ -253,7 +277,7 @@ async function bootstrap(request: Request, env: Env, user: User) {
   await prepareUser(env, user);
   await env.DB.prepare("DELETE FROM todos WHERE user_id=? AND status='deleted' AND deleted_at < datetime('now','-30 days')").bind(user.id).run();
   const [profile, todos, categories, presets, schedules, scheduleRecords, diaryEntries] = await Promise.all([
-    env.DB.prepare("SELECT id,email,name,avatar_url,settings_json FROM users WHERE id=?").bind(user.id).first<Json>(),
+    env.DB.prepare("SELECT id,email,name,username,avatar_url,settings_json FROM users WHERE id=?").bind(user.id).first<Json>(),
     env.DB.prepare("SELECT * FROM todos WHERE user_id=? ORDER BY CASE WHEN deadline IS NULL THEN 1 ELSE 0 END,deadline ASC,created_at DESC").bind(user.id).all<Json>(),
     env.DB.prepare("SELECT id,name,color,is_default isDefault FROM categories WHERE user_id=? ORDER BY is_default DESC,created_at").bind(user.id).all<Json>(),
     env.DB.prepare("SELECT id,name,offsets_json,is_default isDefault FROM reminder_presets WHERE user_id=? ORDER BY is_default DESC,created_at").bind(user.id).all<Json>(),
@@ -262,7 +286,7 @@ async function bootstrap(request: Request, env: Env, user: User) {
     env.DB.prepare("SELECT * FROM diary_entries WHERE user_id=? ORDER BY entry_date DESC").bind(user.id).all<Json>(),
   ]);
   return response(request, env, {
-    user: { id: profile?.id, email: profile?.email, name: profile?.name, avatarUrl: profile?.avatar_url, settings: JSON.parse(String(profile?.settings_json || "{}")) },
+    user: { id: profile?.id, email: profile?.email, username: profile?.username, name: profile?.name, avatarUrl: profile?.avatar_url, settings: JSON.parse(String(profile?.settings_json || "{}")) },
     todos: todos.results.map(todo), categories: categories.results,
     reminderPresets: presets.results.map((item) => ({ id: item.id, name: item.name, isDefault: item.isDefault, offsets: JSON.parse(String(item.offsets_json || "[]")) })),
     schedules: schedules.results.map(scheduleItem),
@@ -577,6 +601,7 @@ export default {
       const expectedEmail = request.headers.get('X-Jishi-Account-Email');
       if (expectedEmail && expectedEmail.trim().toLowerCase() !== user.email.toLowerCase()) return response(request, env, { error: '云端账号已改变，本机记录仍保留，请重新登录后同步' }, 409);
       await prepareUser(env, user);
+      if (url.pathname === '/api/guest/import' && request.method === 'POST') return response(request, env, await importGuest(request, env.DB, user.id));
       const repeated = await offlinePrecondition(request, env, user); if (repeated) return repeated;
       if (url.pathname === '/api/points' || url.pathname.startsWith('/api/points/') || url.pathname.startsWith('/api/shop/')) { await prepareUser(env, user); return response(request, env, await pointsAction(request, env.DB, user.id)); }
       if (url.pathname === "/api/bootstrap" && request.method === "GET") return await bootstrap(request, env, user);

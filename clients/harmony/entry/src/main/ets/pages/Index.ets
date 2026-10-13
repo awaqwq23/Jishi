@@ -150,7 +150,7 @@ struct Index {
         })
         .onControllerAttached(() => {
           const userAgent: string = this.controller.getUserAgent();
-          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.6`);
+          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.7`);
         })
         .onInterceptRequest((event) => {
           if (!event || !this.offlineShell || !this.isTrustedUrl(event.request.getRequestUrl()) || event.request.getRequestMethod() !== 'GET') return null;
