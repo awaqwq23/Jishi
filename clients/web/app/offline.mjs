@@ -2,7 +2,13 @@
 // are encrypted with a non-exportable device key, never placed in localStorage.
 const DB = 'jishi-offline-v1';
 const ACTIVE = 'jishi-offline-active-v1';
-const clone = value => structuredClone(value);
+const clone = value => typeof structuredClone === 'function' ? structuredClone(value) : value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+function uuid() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16)); bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 const fail = (message, status) => Object.assign(new Error(message), { status });
 export const unavailable = error => !error?.status || error.status >= 500;
 
@@ -52,7 +58,7 @@ async function unseal(value) {
 }
 
 function emptyAccount(email, name) {
-  return { user: { id: `local-${crypto.randomUUID()}`, email, name: name || email.split('@')[0], settings: {} }, todos: [], categories: [], reminderPresets: [], schedules: [], scheduleRecords: [], diaryEntries: [], points: { enabled: false, balance: 0, checkedIn: false, today: new Date().toISOString().slice(0, 10), rules: { signinReward: 5, signinPenalty: 0, taskReward: 10, taskPenalty: 0, habitReward: 5, habitPenalty: 0 }, products: [], ledger: [] } };
+  return { user: { id: `local-${uuid()}`, email, name: name || email.split('@')[0], settings: {} }, todos: [], categories: [], reminderPresets: [], schedules: [], scheduleRecords: [], diaryEntries: [], points: { enabled: false, balance: 0, checkedIn: false, today: new Date().toISOString().slice(0, 10), rules: { signinReward: 5, signinPenalty: 0, taskReward: 10, taskPenalty: 0, habitReward: 5, habitPenalty: 0 }, products: [], ledger: [] } };
 }
 
 function entity(data, path, body = {}) {
@@ -204,7 +210,7 @@ export class OfflineClient {
       return this.transport(path, init);
     }
     const body = init.body ? JSON.parse(init.body) : {};
-    const operation = { id: crypto.randomUUID(), path, method, body, base: clone(entity(this.account.data, path, body)) };
+    const operation = { id: uuid(), path, method, body, base: clone(entity(this.account.data, path, body)) };
     if (path === '/api/points/checkin') operation.body.date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
     const draft = clone(this.account.data), result = applyLocal(draft, operation);
     if (path.startsWith('/api/points/') || path.startsWith('/api/shop/')) { result.provisional = true; draft.points.provisional = true; }

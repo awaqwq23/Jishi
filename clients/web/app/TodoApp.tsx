@@ -233,10 +233,14 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return await offlineRequest(url, init, networkApi) as T;
 }
 async function networkApi(url: string, init?: RequestInit): Promise<unknown> {
-  const response = await fetch(apiUrl(url), { ...init, signal: init?.signal || AbortSignal.timeout(6000), credentials: "include", headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
-  const data = await response.json().catch(() => { throw Object.assign(new Error('服务器暂时无法连接，已切换本机使用'), { status: 502 }); });
-  if (!response.ok) throw Object.assign(new Error(data.error || "操作没有完成，请稍后重试"), { status: response.status });
-  return data;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 6000);
+  try {
+    const response = await fetch(apiUrl(url), { ...init, signal: init?.signal || controller.signal, credentials: "include", headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
+    const data = await response.json().catch(() => { throw Object.assign(new Error('服务器暂时无法连接，已切换本机使用'), { status: 502 }); });
+    if (!response.ok) throw Object.assign(new Error(data.error || "操作没有完成，请稍后重试"), { status: response.status });
+    return data;
+  } finally { window.clearTimeout(timer); }
 }
 
 function DefaultAvatar({ size = 22 }: { size?: number }) {
