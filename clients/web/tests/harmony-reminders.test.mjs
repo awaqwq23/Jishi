@@ -22,7 +22,7 @@ function fixture() {
   vm.runInNewContext(output, context);
   const scheduler = new context.exports.ReminderScheduler();
   let failures = 0;
-  return { scheduler, published, cancelled, slots, setEnabled: value => { enabled = value; }, setNow: value => { now = value; }, get now() { return now; }, get failures() { return failures; }, async sync(items) { scheduler.sync(JSON.stringify(items), () => failures++); await scheduler.queue; } };
+  return { scheduler, published, cancelled, slots, setEnabled: value => { enabled = value; }, setNow: value => { now = value; }, get now() { return now; }, get failures() { return failures; }, async sync(items, clear = false) { scheduler.sync(JSON.stringify(items), () => failures++, clear); await scheduler.queue; } };
 }
 test('Harmony uses service notifications and updates queues without cancelling a due reminder', async () => {
   const f = fixture();
@@ -36,9 +36,16 @@ test('Harmony uses service notifications and updates queues without cancelling a
   await f.sync([two]);
   assert.equal(f.cancelled.length, 0);
   assert.equal(f.scheduler.hasScheduled('one'), true);
-  await f.sync([]);
+  await f.sync([], true);
   assert.deepEqual(f.cancelled, ['all']);
   assert.equal(f.scheduler.hasScheduled('one'), false);
+});
+test('last reminder reaching its time does not get cancelled when the future queue becomes empty', async () => {
+  const f = fixture();
+  const item = { key: 'last', title: '最后一个提醒', body: '到时', at: f.now + 60000 };
+  await f.sync([item]); f.setNow(item.at + 1000); await f.sync([]);
+  assert.equal(f.cancelled.length, 0);
+  assert.equal(f.scheduler.hasScheduled('last'), true);
 });
 test('denied permission does not erase existing reminders; same payload can retry after grant', async () => {
   const f = fixture();

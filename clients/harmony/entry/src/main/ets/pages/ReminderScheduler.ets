@@ -14,8 +14,8 @@ export class ReminderScheduler {
   private lastPayload: string = '';
   private scheduled: Map<string, number> = new Map<string, number>();
 
-  sync(payload: string, onFailure: () => void): void {
-    if (typeof payload !== 'string' || payload.length > 300000 || payload === this.lastPayload) return;
+  sync(payload: string, onFailure: () => void, clear: boolean = false): void {
+    if (typeof payload !== 'string' || payload.length > 300000 || (!clear && payload === this.lastPayload)) return;
     const generation = ++this.generation;
     this.queue = this.queue.then(async () => {
       if (generation !== this.generation) return;
@@ -29,7 +29,7 @@ export class ReminderScheduler {
       // opening/syncing the app replenishes the queue as reminders expire.
       if (reminders.length && !notificationManager.isNotificationEnabledSync()) throw new Error('Notifications disabled');
       await notificationManager.addSlot(notificationManager.SlotType.SERVICE_INFORMATION);
-      if (!reminders.length && payload === '[]') {
+      if (clear) {
         await reminderAgentManager.cancelAllReminders();
         this.scheduled.clear();
         this.lastPayload = payload;

@@ -53,11 +53,12 @@ type NativeBridge = {
   notificationPermissionState?: () => string | Promise<string>;
   reminderPermissionState?: () => string | Promise<string>;
   syncReminders?: (payload: string) => void;
+  clearReminders?: () => void;
 };
 type ReminderNotice = { title: string; body: string };
 
 function clearNativeReminders() {
-  try { (window as Window & { JishiNative?: NativeBridge }).JishiNative?.syncReminders?.("[]"); }
+  try { const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative; if (native?.clearReminders) native.clearReminders(); else native?.syncReminders?.("[]"); }
   catch { /* A disconnected native bridge must not prevent signing out. */ }
 }
 
@@ -730,7 +731,8 @@ export default function TodoApp() {
     const sync = () => {
       const horizonDays = /JishiAndroid\/|JishiWindows\//i.test(navigator.userAgent) ? 366 : 21;
       native.setBackgroundReminders?.(notificationEnabled);
-      native.syncReminders?.(JSON.stringify(notificationEnabled ? upcomingNativeReminders(data, Date.now(), horizonDays) : []));
+      if (notificationEnabled) native.syncReminders?.(JSON.stringify(upcomingNativeReminders(data, Date.now(), horizonDays)));
+      else clearNativeReminders();
     };
     sync();
     const timer = window.setInterval(sync, 6 * 60 * 60_000);
