@@ -164,3 +164,4 @@ GitHub 构建 38416506363 的 Windows 0.4.11 安装及安装后定时系统通�
 current 保存 0.4.11 / 0.3.7，previous 保存已部署前版 0.4.10 / 0.3.6；本机旧 previous 暂存保留至部署及验收成功。正式源码、数据库、秘密和旧生产回滚备份未清理。本次更新清单 web-5868378493343d61、required=true 已通过 npm run check:updates。鸿蒙材料包含新版正式包、原一致图标和实际展示截图、游客说明、更新说明与隐私政策草案，不含审核账号凭据。
 
 拟执行 sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261014-guest-usernames；须先完成发布预检并取得 AGENTS.md 第 4 步对该准确命令的最终明确确认。备份由正式 apply 停服后完整创建并加密校验，失败由脚本回滚；未创建本次生产备份，未停止正式服务。
+发布材料提交 12fc8f7f4cc333a3151992440864ac115372a258 已推送，公开发布任务 38430143329 成功。服务器部署 --preflight 再次独立核对 Windows 0.4.11 和正式 Android 0.4.7 两个公开资产大小、SHA256 与下载链接，Release clients-v0.4.11-a0.4.7 验证通过；更新清单、生产秘密门禁、依赖审计和 nginx -t 均通过。备份目标 /var/backups/jishi/previous-20261014-guest-usernames 尚不存在，正式 apply 没有执行。等待对前述准确命令的最终确认，正式版本仍为 web-b426708b717067dc / Windows 0.4.10，鸿蒙商店与真机验收未完成。
