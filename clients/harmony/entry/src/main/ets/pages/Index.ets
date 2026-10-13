@@ -107,7 +107,10 @@ struct Index {
     this.offlineShell = true;
     this.loadFailed = false;
     if (this.currentUrl !== this.offlineSite) this.currentUrl = this.offlineSite;
-    else this.controller.loadUrl(this.currentUrl);
+    else {
+      try { this.controller.loadUrl(this.currentUrl); }
+      catch (_) { this.loadFailed = true; this.loading = false; }
+    }
   }
 
   private isTrustedUrl(url: string): boolean {

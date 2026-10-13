@@ -23,3 +23,32 @@ test('native offline shell keeps trusted HTTPS requests and never substitutes an
   assert.equal(exported.exports.localPath('https://awaqwq233.com/note/../secret.key', origins), null);
   assert.equal(exported.exports.localPath('https://awaqwq233.com/note/assets/app.js', origins), 'assets/app.js');
 });
+
+test('offline startup reopens the last trusted site and rejects a forged saved URL', async () => {
+  for (const saved of ['https://fallback.example/note/', 'https://attacker.example/']) {
+    const loaded = [], checked = [];
+    let ready;
+    class Window {
+      constructor() { this.webContents = { getUserAgent: () => 'test', setUserAgent() {}, session: { on() {} }, setWindowOpenHandler() {} }; }
+      loadURL(url) { loaded.push(url); return Promise.resolve(); }
+      on() {}
+    }
+    class Tray { setToolTip() {} on() {} setContextMenu() {} }
+    const electron = { app: { getPath: () => '/device-test', getVersion: () => '0.4.9', setAppUserModelId() {}, requestSingleInstanceLock: () => true, on() {}, async getFileIcon() { return {}; }, whenReady() { return { then(callback) { ready = callback(); } }; } }, BrowserWindow: Window, Tray, Menu: { buildFromTemplate: value => value }, net: {}, session: { defaultSession: {} }, ipcMain: { on() {}, handle() {} }, Notification: { isSupported: () => false }, shell: {} };
+    const modules = {
+      electron,
+      'node:fs': { readFileSync() { return JSON.stringify({ url: saved }); }, mkdirSync() {}, writeFileSync() {} },
+      'app-config.json': { webUrl: 'https://primary.example/', fallbackUrls: ['https://fallback.example/note/'] },
+      'host-resolver.cjs': { uniqueUrls: values => [...new Set(values.filter(Boolean))], async resolveAppUrl(values) { checked.push(...values); throw new Error('all hosts unavailable'); } },
+      'offline-shell.cjs': { installOfflineShell() {} },
+      'update-downloader.cjs': { createUpdateDownloader: () => ({ async resumePending() {} }), safeRequest: value => value },
+      'reminder-store.cjs': { createReminderStore: () => ({ restore() {}, tick() {} }) },
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), {
+      require(name) { return modules[name] || modules[path.basename(name)] || require(name); }, __dirname: '/test-app', process: { argv: [], env: {}, platform: 'win32' }, URL, console, setInterval() {},
+    });
+    await ready;
+    const expected = saved.includes('attacker') ? 'https://primary.example/' : saved;
+    assert.equal(checked[0], expected); assert.deepEqual(loaded, [expected]);
+  }
+});
