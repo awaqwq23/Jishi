@@ -35,21 +35,26 @@ struct Index {
   private nativeBridge: JishiNativeBridge = {
     notify: (title: string, body: string, key: string): string => {
       if (!this.bridgeAllowed() || typeof title !== 'string' || typeof body !== 'string' || typeof key !== 'string') return 'rejected';
+      if (this.scheduler.hasScheduled(key)) return 'sent';
       const request: notificationManager.NotificationRequest = {
         id: this.notificationId(key),
+        notificationSlotType: notificationManager.SlotType.SERVICE_INFORMATION,
         content: {
           notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
           normal: { title: title.slice(0, 120), text: body.slice(0, 500) }
         }
       };
-      notificationManager.publish(request).catch(() => {});
+      notificationManager.addSlot(notificationManager.SlotType.SERVICE_INFORMATION)
+        .then(() => notificationManager.publish(request))
+        .then(() => this.emitNotificationResult(key, 'sent'))
+        .catch(() => this.emitNotificationResult(key, 'failed'));
       return 'queued';
     },
     requestNotificationPermission: (): string => {
       if (!this.bridgeAllowed()) return 'denied';
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       notificationManager.requestEnableNotification(context)
-        .then(() => this.emitPermission('granted'))
+        .then(() => this.emitPermission(notificationManager.isNotificationEnabledSync() ? 'granted' : 'denied'))
         .catch(() => this.emitPermission('denied'));
       return 'prompting';
     },
@@ -96,6 +101,12 @@ struct Index {
     ).catch(() => {});
   }
 
+  private emitNotificationResult(key: string, state: string): void {
+    if (!this.bridgeAllowed()) return;
+    const detail: string = JSON.stringify({ key: key, state: state });
+    this.controller.runJavaScript(`window.dispatchEvent(new CustomEvent('jishi-native-notification-result',{detail:${detail}}));`).catch(() => {});
+  }
+
   private failOver(): void {
     if (this.offlineShell) { this.loadFailed = true; this.loading = false; return; }
     if (!this.triedAlternate) {
@@ -133,7 +144,7 @@ struct Index {
         })
         .onControllerAttached(() => {
           const userAgent: string = this.controller.getUserAgent();
-          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.5`);
+          this.controller.setCustomUserAgent(`${userAgent} JishiHarmony/0.3.6`);
         })
         .onInterceptRequest((event) => {
           if (!event || !this.offlineShell || !this.isTrustedUrl(event.request.getRequestUrl()) || event.request.getRequestMethod() !== 'GET') return null;

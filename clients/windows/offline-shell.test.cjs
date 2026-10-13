@@ -42,7 +42,7 @@ test('offline startup reopens the last trusted site and rejects a forged saved U
       'host-resolver.cjs': { uniqueUrls: values => [...new Set(values.filter(Boolean))], async resolveAppUrl(values) { checked.push(...values); throw new Error('all hosts unavailable'); } },
       'offline-shell.cjs': { installOfflineShell() {} },
       'update-downloader.cjs': { createUpdateDownloader: () => ({ async resumePending() {} }), safeRequest: value => value },
-      'reminder-store.cjs': { createReminderStore: () => ({ restore() {}, tick() {} }) },
+      'reminder-store.cjs': { createReminderStore: () => ({ restore() {}, async tick() {} }) },
     };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8'), {
       require(name) { return modules[name] || modules[path.basename(name)] || require(name); }, __dirname: '/test-app', process: { argv: [], env: {}, platform: 'win32' }, URL, console, setInterval() {},

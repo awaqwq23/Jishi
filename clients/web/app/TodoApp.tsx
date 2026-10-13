@@ -11,6 +11,7 @@ import PointsBoard, { type PointsData } from "./PointsBoard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, withRuntimeBase } from "./runtime-path";
 import { offlineRequest, reconnect, exportLocalBackup, forgetLocalCredentials } from './offline.mjs';
+import { sendNativeNotification } from './system-notifications.mjs';
 
 type Priority = "low" | "normal" | "important" | "urgent";
 type TodoStatus = "active" | "completed" | "deleted";
@@ -46,7 +47,7 @@ const LOCAL_MEDIA_STORE = "backgrounds";
 type NativeReminder = { key: string; title: string; body: string; at: number };
 type NativeBridge = {
   setBackgroundReminders?: (enabled: boolean) => void;
-  notify: (title: string, body: string, key: string) => void;
+  notify: (title: string, body: string, key: string) => void | string | Promise<boolean>;
   requestNotificationPermission?: () => void | Promise<string>;
   notificationPermissionState?: () => string | Promise<string>;
   reminderPermissionState?: () => string | Promise<string>;
@@ -136,7 +137,7 @@ function writeNotificationHistory(history: Set<string>) {
 }
 async function showDeviceNotification(title: string, body: string, key: string) {
   const native = (window as Window & { JishiNative?: NativeBridge }).JishiNative;
-  if (native) { native.notify(title, body, key); return; }
+  if (native) { return sendNativeNotification(native, title, body, key); }
   if (!("Notification" in window) || Notification.permission !== "granted") throw new Error("通知权限尚未开启");
   if ("serviceWorker" in navigator) {
     try {
@@ -610,7 +611,7 @@ export default function TodoApp() {
   const [notificationEnabled, setNotificationEnabled] = useState(readNotificationsEnabled);
   const [reminderNotice, setReminderNotice] = useState<ReminderNotice | null>(null);
   useEffect(() => {
-    const unavailable = () => setNotice("系统未允许后台定时提醒，请检查通知权限；保持应用打开仍可收到页面提醒。");
+    const unavailable = () => setError("后台定时提醒下发失败；应用打开时仍会尝试发送系统通知，请检查通知权限或更新客户端。");
     const precision = (event: Event) => {
       const state = (event as CustomEvent<string>).detail;
       setNotice(state === "exact" ? "精确定时提醒权限已开启" : "系统通知已开启，但精确定时权限未开启；Android 可能延后提醒");
@@ -659,7 +660,7 @@ export default function TodoApp() {
       localStorage.setItem(NOTIFICATION_KEY, String(granted)); setNotificationEnabled(granted);
       if (!granted) { notificationHistory.current.clear(); writeNotificationHistory(notificationHistory.current); }
       setNotice(granted ? "系统通知权限已开启" : "系统通知权限未开启，请在手机设置中允许拾光记事发送通知");
-      if (granted) void showDeviceNotification("拾光记事提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`);
+      if (granted) void showDeviceNotification("拾光记事提醒已开启", "待办和定期任务会通过本机消息栏提醒你。", `enabled:${Date.now()}`).catch(() => setError("系统通知发送失败，请检查此设备的通知权限"));
       window.setTimeout(() => setNotice(""), 2600);
     };
     window.addEventListener("jishi-native-notification-permission", receiveNativePermission);
@@ -672,15 +673,20 @@ export default function TodoApp() {
       const now = Date.now();
       const sendOnce = (key: string, title: string, body: string) => {
         if (notificationHistory.current.has(key)) return;
-        notificationHistory.current.add(key); writeNotificationHistory(notificationHistory.current); setReminderNotice({ title, body });
-        if (!native?.syncReminders && notificationsSupported() && (native || Notification.permission === "granted")) void showDeviceNotification(title, body, key).catch(() => setError("系统通知发送失败，请检查此设备的通知权限"));
+        notificationHistory.current.add(key); writeNotificationHistory(notificationHistory.current);
+        if (notificationsSupported() && (native || Notification.permission === "granted")) {
+          void showDeviceNotification(title, body, key).catch(() => {
+            notificationHistory.current.delete(key); writeNotificationHistory(notificationHistory.current);
+            setError("系统通知发送失败，请检查此设备的通知权限");
+          });
+        } else setReminderNotice({ title, body });
       };
       data.todos.filter((todo) => todo.status === "active" && todo.deadline).forEach((todo) => {
         const deadline = new Date(todo.deadline!).getTime();
         if (!Number.isFinite(deadline)) return;
-        if (deadline <= now) { sendOnce(`todo:${todo.id}:deadline:${deadline}`, `待办已逾期：${todo.title}`, "它还没有完成，点此回到拾光记事。"); return; }
+        if (deadline <= now) { if (now - deadline <= 86400000) sendOnce(`todo:${todo.id}:${deadline}`, `待办已到时：${todo.title}`, "它还没有完成，点此回到拾光记事。"); return; }
         const reachedOffset = todo.reminderOffsets.map((minutes) => ({ minutes, moment: deadline - minutes * 60_000 })).filter((entry) => entry.moment <= now).sort((a, b) => b.moment - a.moment)[0];
-        if (reachedOffset) sendOnce(`todo:${todo.id}:reminder:${reachedOffset.moment}`, todo.title, `${dateTime(todo.deadline)} 截止`);
+        if (reachedOffset && now - reachedOffset.moment <= 86400000) sendOnce(`todo:${todo.id}:${reachedOffset.moment}`, todo.title, `${dateTime(todo.deadline)} 截止`);
       });
       const today = localDateKey(); const completedIds = new Set(data.scheduleRecords.filter((record) => record.occurrenceDate === today).map((record) => record.itemId));
       data.schedules.filter((item) => item.status === "active" && item.timeOfDay && occursOn(item, today) && !completedIds.has(item.id)).forEach((item) => {
@@ -688,7 +694,7 @@ export default function TodoApp() {
       });
     };
     const checkWhenVisible = () => { if (document.visibilityState === "visible") check(); };
-    check(); const timer = window.setInterval(check, 30_000); document.addEventListener("visibilitychange", checkWhenVisible); window.addEventListener("focus", check);
+    check(); const timer = window.setInterval(check, 1000); document.addEventListener("visibilitychange", checkWhenVisible); window.addEventListener("focus", check);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", checkWhenVisible); window.removeEventListener("focus", check); };
   }, [data, notificationEnabled]);
 
@@ -776,12 +782,11 @@ export default function TodoApp() {
   };
   const testNotifications = async () => {
     if (!notificationEnabled) { await toggleNotifications(); return; }
-    const message = { title: "拾光记事测试提醒", body: "弹窗和系统通知均已成功连接。" };
-    setReminderNotice(message);
+    const message = { title: "拾光记事测试提醒", body: "这是一条系统通知。请在手机通知栏或电脑桌面查看。" };
     if (notificationsSupported()) {
-      try { await showDeviceNotification(message.title, message.body, `test:${Date.now()}`); flash("测试弹窗和系统通知已发送"); }
-      catch { flash("测试弹窗已显示；系统通知被设备拦截"); }
-    } else flash("测试弹窗已显示；此浏览器不支持系统通知");
+      try { const confirmed = await showDeviceNotification(message.title, message.body, `test:${Date.now()}`); flash(confirmed === false ? "已请求系统通知；旧客户端不能确认发送结果，请查看通知栏" : "系统已接受测试通知，请查看通知栏或桌面"); }
+      catch (reason) { setError(reason instanceof Error ? reason.message : "系统通知发送失败"); }
+    } else { setReminderNotice(message); flash("此浏览器不支持系统通知，当前只支持页面提醒"); }
   };
   const mutateTodo = async (id: string, patch: Record<string, unknown>) => {
     try {

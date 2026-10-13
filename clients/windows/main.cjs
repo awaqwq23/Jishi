@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, ipcMain, Menu, net, Notification, session, shell, Tray } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, net, Notification, screen, session, shell, Tray } = require("electron");
+const { createSystemNotifier } = require('./system-notifier.cjs');
 const { installOfflineShell } = require('./offline-shell.cjs');
 const path = require("node:path");
 const fs = require('node:fs');
@@ -10,7 +11,8 @@ const { createReminderStore } = require(path.join(__dirname, "reminder-store.cjs
 
 const APP_URLS = uniqueUrls([process.env.JISHI_WEB_URL, config.webUrl, ...(config.fallbackUrls || [])]);
 const APP_ORIGINS = [...new Set(APP_URLS.map((url) => new URL(url).origin))];
-const SMOKE_TEST = process.argv.includes("--jishi-smoke-test");
+const NOTIFICATION_SMOKE = process.argv.includes('--jishi-notification-smoke-test');
+const SMOKE_TEST = NOTIFICATION_SMOKE || process.argv.includes("--jishi-smoke-test");
 let downloadHandlerInstalled = false;
 let reminderStore;
 const backgroundLaunch = process.argv.includes('--background-reminders');
@@ -18,16 +20,27 @@ let tray;
 let mainWindow;
 let isQuitting = false;
 let updateDownloader;
+let systemNotifier;
+const desktopNotifications = new Set();
 
 app.setAppUserModelId("cn.jishi.todo");
 if (!SMOKE_TEST && !app.requestSingleInstanceLock()) app.exit(0);
 app.on('second-instance', () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } else void openWindow(); });
 
-function showNativeNotification(window, title, body) {
-  if (!Notification.isSupported()) return;
-  const notification = new Notification({ title: String(title).slice(0, 120), body: String(body).slice(0, 500), silent: false });
-  notification.on("click", () => { if (window && !window.isDestroyed()) { window.show(); window.focus(); } });
-  notification.show();
+function showDesktopReminder(item, onClick) {
+  const area = screen.getPrimaryDisplay().workArea;
+  const popup = new BrowserWindow({ width: 360, height: 150, x: area.x + area.width - 380, y: area.y + area.height - 170, show: false, alwaysOnTop: true, skipTaskbar: true, autoHideMenuBar: true, resizable: false, title: '拾光记事提醒', webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  desktopNotifications.add(popup);
+  popup.on('closed', () => desktopNotifications.delete(popup));
+  popup.on('focus', onClick);
+  const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>body{font:15px sans-serif;background:#f4f0e8;color:#302d28;margin:16px}p{line-height:1.5;overflow-wrap:anywhere}</style><strong>${escape(item.title)}</strong><p>${escape(item.body)}</p>`;
+  return popup.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).then(() => { popup.showInactive(); setTimeout(() => { if (!popup.isDestroyed()) popup.close(); }, 30000); });
+}
+
+function showNativeNotification(window, title, body, key = `message:${Date.now()}`) {
+  if (!systemNotifier) return Promise.reject(new Error('Notification service not ready'));
+  return systemNotifier.notify({ title: String(title), body: String(body), key: String(key) }, () => { if (window && !window.isDestroyed()) { window.show(); window.focus(); } });
 }
 
 function syncNativeReminders(window, payload) {
@@ -115,14 +128,15 @@ async function openWindow() {
   }
 }
 
-ipcMain.on("jishi:notify", (event, title, body) => { if (isTrustedSender(event)) showNativeNotification(BrowserWindow.fromWebContents(event.sender), title, body); });
+ipcMain.on("jishi:notify", (event, title, body, key) => { if (isTrustedSender(event)) void showNativeNotification(BrowserWindow.fromWebContents(event.sender), title, body, key).catch(() => event.sender.send('jishi:reminder-error')); });
+ipcMain.handle("jishi:notify-confirmed", (event, title, body, key) => { if (!isTrustedSender(event)) return false; return showNativeNotification(BrowserWindow.fromWebContents(event.sender), title, body, key); });
 ipcMain.on("jishi:sync-reminders", (event, payload) => { if (isTrustedSender(event)) syncNativeReminders(BrowserWindow.fromWebContents(event.sender), payload); });
 ipcMain.on('jishi:background-reminders', (event, enabled) => {
   if (!isTrustedSender(event) || typeof enabled !== 'boolean' || SMOKE_TEST) return;
   if (process.platform === 'win32' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath, args: ['--background-reminders'] });
   if (!enabled) reminderStore?.sync('[]');
 });
-ipcMain.handle("jishi:notification-permission", (event) => isTrustedSender(event) && Notification.isSupported() ? "granted" : "denied");
+ipcMain.handle("jishi:notification-permission", (event) => isTrustedSender(event) ? "granted" : "denied");
 ipcMain.handle("jishi:update-download-state", (event) => isTrustedSender(event) ? updateDownloader?.getState() : { status: "failed", message: "更新页面来源不受信任" });
 ipcMain.handle("jishi:update-download-start", (event, payload) => {
   if (!isTrustedSender(event) || !updateDownloader) return { status: "failed", message: "无法启动更新下载" };
@@ -134,13 +148,26 @@ ipcMain.handle("jishi:update-download-start", (event, payload) => {
 });
 
 app.whenReady().then(async () => {
+  if (NOTIFICATION_SMOKE) {
+    try {
+      const service = createSystemNotifier({ Notification, fallback: showDesktopReminder, file: path.join(app.getPath('userData'), 'smoke-notification-delivery.json') });
+      const queue = createReminderStore({ file: path.join(app.getPath('userData'), 'smoke-reminders.json'), notify: item => service.notify(item) });
+      queue.sync(JSON.stringify([{ key: `smoke:${Date.now()}`, title: '拾光记事提醒测试', body: '安装包的系统提醒已到时。', at: Date.now() + 1500 }]));
+      await new Promise(resolve => setTimeout(resolve, 1700));
+      await queue.tick();
+      console.log('JISHI_SCHEDULED_NOTIFICATION=accepted');
+      app.quit();
+    } catch (error) { console.error('JISHI_SCHEDULED_NOTIFICATION=failed'); app.exit(1); }
+    return;
+  }
   if (!SMOKE_TEST) installOfflineShell(session.defaultSession, APP_ORIGINS);
   if (!SMOKE_TEST) {
-    reminderStore = createReminderStore({ file: path.join(app.getPath('userData'), 'reminders.json'), notify: item => showNativeNotification(mainWindow, item.title, item.body) });
+    systemNotifier = createSystemNotifier({ Notification, fallback: showDesktopReminder, file: path.join(app.getPath('userData'), 'reminder-delivery.json') });
+    reminderStore = createReminderStore({ file: path.join(app.getPath('userData'), 'reminders.json'), notify: item => showNativeNotification(mainWindow, item.title, item.body, item.key) });
     reminderStore.restore();
-    const deliver = () => { try { reminderStore.tick(); } catch { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('jishi:reminder-error'); } };
+    const deliver = () => { void reminderStore.tick().catch(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('jishi:reminder-error'); }); };
     deliver();
-    setInterval(deliver, 15000);
+    setInterval(deliver, 1000);
   }
   updateDownloader = createUpdateDownloader({
     fetchImpl: net.fetch,
@@ -148,7 +175,7 @@ app.whenReady().then(async () => {
     downloadsDir: app.getPath("downloads"),
     onState: sendDownloadState,
     onCompleted: async (savePath) => {
-      showNativeNotification(mainWindow, "记时更新下载完成", "安装包已校验并保存，点击通知可返回记时。");
+      await showNativeNotification(mainWindow, "拾光记事更新下载完成", "安装包已校验并保存，点击通知可返回拾光记事。");
       shell.showItemInFolder(savePath);
     },
   });

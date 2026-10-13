@@ -20,6 +20,15 @@ async function main() {
     const code=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',resolve);});clearTimeout(timeout);
     if(code!==0||!stdout.includes(`JISHI_RESOLVED_URL=${url}`)) throw new Error('Installed Windows startup/host smoke failed');
     console.log('installed_windows_smoke=pass');
+    let receipt = '';
+    const notificationChild = spawn(executable, ['--jishi-notification-smoke-test'], { windowsHide: true, env: { ...process.env, APPDATA: folder }, stdio: ['ignore', 'pipe', 'pipe'] });
+    notificationChild.stdout.on('data', chunk => { receipt += chunk.toString(); });
+    notificationChild.stderr.on('data', () => {});
+    const notificationTimeout = setTimeout(() => notificationChild.kill(), 45000);
+    const notificationCode = await new Promise((resolve, reject) => { notificationChild.on('error', reject); notificationChild.on('close', resolve); });
+    clearTimeout(notificationTimeout);
+    if (notificationCode !== 0 || !receipt.includes('JISHI_SCHEDULED_NOTIFICATION=accepted')) throw new Error('Installed Windows scheduled notification smoke failed');
+    console.log('installed_windows_scheduled_notification=pass');
   } finally {
     await new Promise(resolve=>server.close(resolve));
     if(!fs.realpathSync(folder).startsWith(fs.realpathSync(os.tmpdir())+path.sep)||fs.lstatSync(folder).isSymbolicLink()) throw new Error('Unsafe smoke cleanup');

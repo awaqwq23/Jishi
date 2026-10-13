@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("JishiNative", {
   setBackgroundReminders(enabled) { ipcRenderer.send('jishi:background-reminders', !!enabled); },
   notify(title, body, key) {
-    ipcRenderer.send("jishi:notify", String(title), String(body), String(key));
+    return ipcRenderer.invoke("jishi:notify-confirmed", String(title), String(body), String(key));
   },
   requestNotificationPermission() {
     return ipcRenderer.invoke("jishi:notification-permission");

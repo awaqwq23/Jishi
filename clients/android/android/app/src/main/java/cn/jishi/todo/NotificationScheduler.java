@@ -27,15 +27,18 @@ final class NotificationScheduler {
 
     static void ensureChannel(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL, "记时任务提醒", NotificationManager.IMPORTANCE_HIGH);
+        NotificationChannel channel = new NotificationChannel(CHANNEL, "拾光记事任务提醒", NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("在到点时显示待办和定期任务提醒");
         channel.enableVibration(true);
         context.getSystemService(NotificationManager.class).createNotificationChannel(channel);
     }
 
     static void show(Context context, String title, String body, String key) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)) throw new SecurityException("Notifications disabled");
         ensureChannel(context);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && context.getSystemService(NotificationManager.class).getNotificationChannel(CHANNEL).getImportance() == NotificationManager.IMPORTANCE_NONE) throw new SecurityException("Reminder channel disabled");
+        SharedPreferences delivered = context.getSharedPreferences("jishi-reminder-delivery", Context.MODE_PRIVATE);
+        if (delivered.contains(key)) return;
         Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (launchIntent == null) launchIntent = new Intent(context, MainActivity.class);
         launchIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -47,10 +50,14 @@ final class NotificationScheduler {
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(contentIntent)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setDefaults(NotificationCompat.DEFAULT_ALL);
         NotificationManagerCompat.from(context).notify(key.hashCode(), notification.build());
+        SharedPreferences.Editor editor = delivered.edit().putLong(key, System.currentTimeMillis());
+        for (String oldKey : delivered.getAll().keySet()) if (System.currentTimeMillis() - delivered.getLong(oldKey, 0) > 90L * 86400000L) editor.remove(oldKey);
+        editor.apply();
     }
 
     static void sync(Context context, String payload, boolean persist) {

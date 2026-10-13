@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "cn.jishi.todo",
     "vendor": "jishi",
-    "versionCode": 3000005,
-    "versionName": "0.3.5",
+    "versionCode": 3000006,
+    "versionName": "0.3.6",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }

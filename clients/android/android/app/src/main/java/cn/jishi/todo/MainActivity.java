@@ -123,7 +123,11 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void showNotification(String title, String body, String key) {
-        NotificationScheduler.show(this, title, body, key);
+        String state = "sent";
+        try { NotificationScheduler.show(this, title, body, key); }
+        catch (RuntimeException error) { state = "failed"; }
+        String script = "window.dispatchEvent(new CustomEvent('jishi-native-notification-result',{detail:{key:" + org.json.JSONObject.quote(key) + ",state:" + org.json.JSONObject.quote(state) + "}}));";
+        getBridge().getWebView().evaluateJavascript(script, null);
     }
 
     @Override
@@ -179,8 +183,9 @@ public class MainActivity extends BridgeActivity {
 
     private class JishiNativeBridge {
         @JavascriptInterface
-        public void notify(String title, String body, String key) {
+        public String notify(String title, String body, String key) {
             runOnUiThread(() -> requestOrShowNotification(title, body, key));
+            return "queued";
         }
 
         @JavascriptInterface
