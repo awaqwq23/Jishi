@@ -43,10 +43,14 @@
 部署尚未执行。准确命令（需用户最终确认）：
 
 ```sh
-sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261012-harmony-review
+sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261013-offline-sync
 ```
 
 该命令先停止 API/Web 并备份完整代码、数据库、下载清单、秘密配置、systemd 和 Nginx，保存为上述目录内的加密 production.tar.aesgcm，并验证可解密恢复。同步保留 .dev.vars、.env 和持久化数据；仅应用已合并、经哈希校验的 Nginx 配置。预计短暂停机约 1–3 分钟，实际取决于备份与启动速度。失败时自动从本次备份恢复代码、数据库、秘密、服务单元及被修改的 Nginx 配置。
 
 生产成功后还需重新核验主备站注册/登录、审核账号、旧客户端日志、更新清单及数据；通过后才能按项目保留规则清理过期备份和暂存文件。
 当前可连接的 AGC 会话要求重新登录，商店名称、图标、新版包和审核账号尚未替换保存。备案由用户办理；不通过更改主体或单机声明绕过备案。
+
+## 2026-10-13 离线功能更新
+
+当前修复候选已更新为鸿蒙 0.3.5（3000005）和 Windows 0.4.8，名称、图标及注册来源修复继续保留。新增离线账号、加密保存密码、本机记录和恢复联网后同步；行为与验证见 [OFFLINE_SYNC.md](OFFLINE_SYNC.md)。旧暂存目录已移至 /opt/jishi-staging-before-offline-20261013，当前 /opt/jishi-staging 为新候选。生产仍未部署，最终命令使用 previous-20261013-offline-sync；本次未办理备案。

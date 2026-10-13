@@ -1,17 +1,23 @@
 {
-  "version": "0.3.3",
-  "versionCode": 3000003,
+  "appName": "拾光记事",
   "bundleName": "cn.jishi.todo",
-  "file": "Jishi-Harmony-0.3.3.app",
-  "size": 470803,
-  "sha256": "D5DCF512659A21A11FCCF3FEF87B2782D81B92FCFDFAFA461A54FD539B5813C6",
+  "version": "0.3.4",
+  "versionCode": 3000004,
+  "compiledNameVerified": true,
+  "appAndAbilityResourceReferencesMatch": true,
+  "compiledIcon": "resources/base/media/app_icon.png",
+  "compiledIconSize": [
+    512,
+    512
+  ],
+  "file": "Jishi-Harmony-0.3.4.app",
+  "size": 470805,
+  "sha256": "85CE5C1218CEFCF62A6B89F6F015FAD9C9AC8AAF24A39655075121542BF3033F",
   "signatureVerified": true,
   "profileCertificateMatch": true,
   "agentReminderGranted": true,
   "storeUploaded": false,
-  "storeUploadedReportedByUser": false,
   "storeSubmitted": false,
   "realDeviceTested": false,
-  "iconFile": "Jishi-Harmony-Icon-1024.png",
-  "iconArtworkMatch": true
+  "iconFile": "Jishi-Harmony-Icon-1024.png"
 }

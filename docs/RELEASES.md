@@ -101,3 +101,16 @@ Windows 0.4.6 / Android 0.4.7；对应原 Web `web-1eb33d5ff18eb60d`。完整生
 ### Linux 候选验收完成
 
 提交 85ab69b 的运行内容已在 /opt/jishi-staging 验证；完整 systemd 沙箱、复制旧数据、实际暂存代理注册/登录/bootstrap 及恶意来源拒绝均通过。Windows/Linux Web 哈希均为 e7c28da6e60fa554bf28534ac3e20d0d981f73b30095cb4770601fc0424bc1fb。备份拟采用 /var/backups/jishi/previous-20261012-harmony-review，生产部署尚未执行，等待 AGENTS.md 最终明确确认。华为会话需重新登录后替换商店资料；详细命令与回滚在 HARMONY_REVIEW_FIXES.md。
+## 2026-10-13 离线进入和恢复联网同步
+
+用户在鸿蒙审核修复任务中新增要求：无法连接服务器时进入本机空间，保存账号密码和个人内容，联网后更新同步。
+
+实现按邮箱隔离的 IndexedDB 数据与持久化上传队列，AES-GCM 加密本机凭据，清除旧版明文密码缓存。支持本机账号创建、离线待办/习惯/日记/配置/签到与商品编辑，联网恢复账号验证和增量上传，幂等创建与内容冲突保护。原登录接口、Cookie 和来源校验保持兼容；没有信任 null Origin、内部来源或 User-Agent。离线积分为预览，兑换与头像上传需联网。
+
+鸿蒙 0.3.5（3000005）正式包、Windows 0.4.8 经 GitHub 构建及安装冒烟测试；Android 0.4.9 编译为未签名候选，缺少既有签名密钥，正式 Android 更新保留 0.4.7。最终原生构建源码：`bc892def5a0b6d3b281134f4366ba5d4e4f1460c`，GitHub 构建 `38336020968`。本机实际浏览器验证离线注册、保存、页面服务停止后刷新进入、恢复连接自动上传，并由隔离 API 核实没有重复待办。未进行鸿蒙/Android 真机验收。
+
+本次 Web 标记：`web-cef1b1fbd246114d`；哈希 `cef1b1fbd246114dbffea803f7e28e2f03bda236f24b81e0206047080187e598`。Windows 安装包 112523872 字节，SHA256 `7ACD20D75C9B64B73CAC74D6F675E77F51AADF54F85C822EB658566C31FC08D7`；鸿蒙正式包 2532317 字节，SHA256 `85B433EDF6200CC13D0299C40639CEE13209D9535A61FC7494A28BD55D598005`。
+
+生产尚未更新：重新建立 `/opt/jishi-staging` 做 Linux 验收，旧暂存资料移到 `/opt/jishi-staging-before-offline-20261013` 保留。最终部署命令、完整备份及回滚仍需按 AGENTS.md 第 4 步获得用户最终明确确认。拟用备份 `/var/backups/jishi/previous-20261013-offline-sync`，确认前不创建生产备份、不停正式服务、不清理历史生产备份。AGC 上传与上架状态另行核验；APP 备案由用户办理。
+
+详细行为及测试边界见 [离线同步说明](OFFLINE_SYNC.md)。

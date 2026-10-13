@@ -1,12 +1,14 @@
 {
   "windows": {
-    "version": "0.4.7",
-    "runId": 37734494571,
-    "commit": "5b70690e5340846429421ef576dab78895f13a07",
+    "version": "0.4.8",
+    "runId": 38336020968,
+    "commit": "bc892def5a0b6d3b281134f4366ba5d4e4f1460c",
     "artifact": "windows-candidate"
   },
   "android": {
     "version": "0.4.7",
-    "retained": true
+    "retained": true,
+    "pendingCandidateVersion": "0.4.9",
+    "pendingReason": "Original Android release signing key unavailable"
   }
 }
