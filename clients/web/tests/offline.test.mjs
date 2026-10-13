@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import vm from 'node:vm';
+import { readFile } from 'node:fs/promises';
 import { OfflineClient } from '../app/offline.mjs';
 
 function fixture() {
@@ -20,7 +22,7 @@ function fixture() {
     return {};
   };
   const storage = { async get(key) { return structuredClone(records.get(key)); }, async put(key, value) { records.set(key, structuredClone(value)); } };
-  const newClient = () => new OfflineClient({ storage, transport, active: () => active, setActive: value => { active = value; } });
+  const newClient = (Client = OfflineClient) => new Client({ storage, transport, active: () => active, setActive: value => { active = value; } });
   return { newClient, records, data, online: () => { connected = true; }, offline: () => { connected = false; }, lose: () => { loseResponse = true; } };
 }
 
@@ -40,6 +42,21 @@ test('offline registration, password verification and pending edits survive a ne
   assert.equal(restarted.status().pending, 0);
   assert.equal(f.data.todos.length, 1);
   assert.equal(f.data.todos[0].title, '断网时保存');
+});
+
+test('older WebViews without structuredClone or randomUUID can persist and synchronize offline data', async () => {
+  const module = { exports: {} };
+  const source = await readFile(new URL('../app/offline.mjs', import.meta.url), 'utf8');
+  vm.runInNewContext(source.replace(/^export /gm, '') + '\nmodule.exports = { OfflineClient };', {
+    module, URL, Uint8Array, TextEncoder, TextDecoder,
+    crypto: { subtle: crypto.subtle, getRandomValues: crypto.getRandomValues.bind(crypto) },
+  });
+  const f = fixture(), client = f.newClient(module.exports.OfflineClient);
+  await client.authenticate('register', { email: 'offline@example.test', password: 'test-secret-123' }); await client.sync();
+  const { todo } = await client.request('/api/todos', { method: 'POST', body: JSON.stringify({ title: 'Legacy offline record' }) }); await client.sync();
+  assert.match(todo.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  f.online(); await client.sync();
+  assert.equal(client.status().pending, 0); assert.equal(f.data.todos[0].title, 'Legacy offline record');
 });
 
 test('lost response after a committed creation retries without duplication', async () => {
