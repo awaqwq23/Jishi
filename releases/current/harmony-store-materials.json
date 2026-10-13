@@ -2,9 +2,10 @@
   "appName": "拾光记事",
   "version": "0.3.6",
   "file": "Jishi-Harmony-Store-Materials.zip",
-  "size": 4643205,
-  "sha256": "E702070DD20E8907DD5CD14F79DC4E3A0F19AA0B1C7D377DD82FE84001ABC86E",
+  "size": 4658076,
+  "sha256": "6163E3E36AF9FCE1D33178D6DC9863B4673E5CA823FBB2FE1FC5ABF191B1418A",
   "storeUploaded": false,
   "storeSubmitted": false,
-  "containsCredentials": false
+  "containsCredentials": false,
+  "productionDeployed": true
 }
