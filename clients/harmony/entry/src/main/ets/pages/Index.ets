@@ -22,6 +22,11 @@ struct Index {
   private readonly fallbackUrl: string = 'https://awaqwq233.com/note/';
   private offlineShell: boolean = false;
   private pageTimer: number = -1;
+  aboutToAppear(): void {
+    PersistentStorage.persistProp('jishi-last-site', this.primaryUrl);
+    const saved: string | undefined = AppStorage.get<string>('jishi-last-site');
+    if (saved === this.primaryUrl || saved === this.fallbackUrl) this.currentUrl = saved;
+  }
   aboutToDisappear(): void { if (this.pageTimer >= 0) clearTimeout(this.pageTimer); }
   private scheduler: ReminderScheduler = new ReminderScheduler();
   private nativeBridge: JishiNativeBridge = {
@@ -97,7 +102,7 @@ struct Index {
     }
     this.offlineShell = true;
     this.loadFailed = false;
-    this.currentUrl = this.primaryUrl;
+    this.controller.loadUrl(this.currentUrl);
   }
 
   private isTrustedUrl(url: string): boolean {
@@ -145,7 +150,11 @@ struct Index {
           this.loading = true;
           this.pageTimer = setTimeout(() => { if (this.loading && !this.offlineShell) this.failOver(); }, 6000);
         })
-        .onPageEnd(() => { this.loading = false; if (this.pageTimer >= 0) clearTimeout(this.pageTimer); })
+        .onPageEnd(() => {
+          this.loading = false;
+          if (this.pageTimer >= 0) clearTimeout(this.pageTimer);
+          if (!this.loadFailed && this.isTrustedUrl(this.currentUrl)) AppStorage.set('jishi-last-site', this.currentUrl);
+        })
         .onLoadIntercept((event) => {
           return !this.isTrustedUrl(event.data.getRequestUrl());
         })

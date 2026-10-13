@@ -2,6 +2,7 @@
 const { app, BrowserWindow, ipcMain, Menu, net, Notification, session, shell, Tray } = require("electron");
 const { installOfflineShell } = require('./offline-shell.cjs');
 const path = require("node:path");
+const fs = require('node:fs');
 const config = require(path.join(__dirname, "app-config.json"));
 const { resolveAppUrl, uniqueUrls } = require(path.join(__dirname, "host-resolver.cjs"));
 const { createUpdateDownloader, safeRequest } = require(path.join(__dirname, "update-downloader.cjs"));
@@ -99,13 +100,18 @@ async function installTray() {
 }
 
 async function openWindow() {
+  const lastSiteFile = path.join(app.getPath('userData'), 'last-site.json');
   try {
     const appUrl = await resolveAppUrl(APP_URLS, net.fetch, 1500);
     if (SMOKE_TEST) { console.log(`JISHI_RESOLVED_URL=${appUrl}`); app.quit(); return; }
+    fs.mkdirSync(path.dirname(lastSiteFile), { recursive: true });
+    fs.writeFileSync(lastSiteFile, JSON.stringify({ url: appUrl }));
     createWindow(appUrl);
   } catch (error) {
     if (SMOKE_TEST) { console.error(error); app.exit(1); return; }
-    createWindow(APP_URLS[0]);
+    let lastSite = APP_URLS[0];
+    try { const saved = JSON.parse(fs.readFileSync(lastSiteFile, 'utf8')); if (APP_URLS.includes(saved.url)) lastSite = saved.url; } catch { /* First installation uses the configured primary. */ }
+    createWindow(lastSite);
   }
 }
 
