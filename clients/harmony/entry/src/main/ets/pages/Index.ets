@@ -21,6 +21,8 @@ struct Index {
   private readonly primaryUrl: string = 'https://jishi.awaqwq233.com/';
   private readonly fallbackUrl: string = 'https://awaqwq233.com/note/';
   private offlineShell: boolean = false;
+  private pageTimer: number = -1;
+  aboutToDisappear(): void { if (this.pageTimer >= 0) clearTimeout(this.pageTimer); }
   private scheduler: ReminderScheduler = new ReminderScheduler();
   private nativeBridge: JishiNativeBridge = {
     notify: (title: string, body: string, key: string): string => {
@@ -138,10 +140,12 @@ struct Index {
           } catch (_) { return null; }
         })
         .onPageBegin(() => {
+          if (this.pageTimer >= 0) clearTimeout(this.pageTimer);
           this.loadFailed = false;
           this.loading = true;
+          this.pageTimer = setTimeout(() => { if (this.loading && !this.offlineShell) this.failOver(); }, 6000);
         })
-        .onPageEnd(() => { this.loading = false; })
+        .onPageEnd(() => { this.loading = false; if (this.pageTimer >= 0) clearTimeout(this.pageTimer); })
         .onLoadIntercept((event) => {
           return !this.isTrustedUrl(event.data.getRequestUrl());
         })

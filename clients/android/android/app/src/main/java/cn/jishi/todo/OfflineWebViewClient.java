@@ -1,6 +1,9 @@
 package cn.jishi.todo;
 
 import android.net.Uri;
+import android.graphics.Bitmap;
+import android.os.Handler;
+import android.os.Looper;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -14,6 +17,8 @@ import java.util.Collections;
 final class OfflineWebViewClient extends BridgeWebViewClient {
     private final Bridge bridge;
     private volatile boolean offlineShell;
+    private final Handler timer = new Handler(Looper.getMainLooper());
+    private Runnable timeout;
     OfflineWebViewClient(Bridge bridge) { super(bridge); this.bridge = bridge; }
     private static boolean trusted(Uri uri) {
         return "https".equals(uri.getScheme()) && (uri.getPort() == -1 || uri.getPort() == 443) && uri.getUserInfo() == null
@@ -30,6 +35,18 @@ final class OfflineWebViewClient extends BridgeWebViewClient {
             }
         }
         return super.shouldInterceptRequest(view, request);
+    }
+    @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
+        super.onPageStarted(view, url, favicon);
+        if (timeout != null) timer.removeCallbacks(timeout);
+        if (!offlineShell && trusted(Uri.parse(url))) {
+            timeout = () -> { if (!offlineShell && view.getProgress() < 100 && url.equals(view.getUrl())) { offlineShell = true; view.loadUrl(url); } };
+            timer.postDelayed(timeout, 6000);
+        }
+    }
+    @Override public void onPageFinished(WebView view, String url) {
+        if (timeout != null) timer.removeCallbacks(timeout);
+        super.onPageFinished(view, url);
     }
     @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         if (request.isForMainFrame() && trusted(request.getUrl()) && !offlineShell) {

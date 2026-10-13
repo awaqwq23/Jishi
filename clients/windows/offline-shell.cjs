@@ -19,7 +19,7 @@ function installOfflineShell(session, origins) {
     };
     if (relative && offline.has(origin)) return local();
     try {
-      const response = await session.fetch(request, { bypassCustomProtocolHandlers: true });
+      const response = await session.fetch(request, { bypassCustomProtocolHandlers: true, ...(relative === 'index.html' ? { signal: AbortSignal.any([request.signal, AbortSignal.timeout(6000)]) } : {}) });
       if (relative === 'index.html' && response.status >= 500) { offline.add(origin); return local(); }
       return response;
     } catch (error) {
