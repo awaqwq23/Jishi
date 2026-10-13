@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("JishiNative", {
+  notificationDeliveryReceipts() { return 'supported'; },
   setBackgroundReminders(enabled) { ipcRenderer.send('jishi:background-reminders', !!enabled); },
   notify(title, body, key) {
     return ipcRenderer.invoke("jishi:notify-confirmed", String(title), String(body), String(key));

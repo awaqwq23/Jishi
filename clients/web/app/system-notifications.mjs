@@ -17,8 +17,9 @@ export async function sendNativeNotification(native, title, body, key, target = 
   try {
     const result = await native.notify(title, body, key);
     if (result === 'rejected' || result === false) throw new Error('系统通知被拒绝，请检查通知权限');
-    if (result === 'queued') await receipt;
-    return result === 'sent' || result === true || result === 'queued';
+    const hasReceipts = native.notificationDeliveryReceipts?.() === 'supported';
+    if (result === 'queued' && hasReceipts) await receipt;
+    return result === 'sent' || result === true || (result === 'queued' && hasReceipts);
   } finally {
     clearTimeout(timer);
     target.removeEventListener('jishi-native-notification-result', receive);

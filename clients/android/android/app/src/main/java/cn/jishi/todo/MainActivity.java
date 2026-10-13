@@ -183,6 +183,9 @@ public class MainActivity extends BridgeActivity {
 
     private class JishiNativeBridge {
         @JavascriptInterface
+        public String notificationDeliveryReceipts() { return "supported"; }
+
+        @JavascriptInterface
         public String notify(String title, String body, String key) {
             runOnUiThread(() -> requestOrShowNotification(title, body, key));
             return "queued";

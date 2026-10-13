@@ -4,7 +4,7 @@ import { sendNativeNotification } from '../app/system-notifications.mjs';
 
 test('queued mobile notification requires a matching OS receipt', async () => {
   const target = new EventTarget();
-  const native = { notify() {
+  const native = { notificationDeliveryReceipts: () => 'supported', notify() {
     queueMicrotask(() => target.dispatchEvent(new CustomEvent('jishi-native-notification-result', { detail: { key: 'test', state: 'sent' } })));
     return 'queued';
   } };
@@ -17,8 +17,9 @@ test('queued mobile notification requires a matching OS receipt', async () => {
 });
 test('unconfirmed queue and rejected bridge do not report success; older clients remain compatible', async () => {
   const target = new EventTarget();
-  await assert.rejects(sendNativeNotification({ notify: () => 'queued' }, '', '', 'test', target, 5), /未收到/);
+  await assert.rejects(sendNativeNotification({ notificationDeliveryReceipts: () => 'supported', notify: () => 'queued' }, '', '', 'test', target, 5), /未收到/);
   await assert.rejects(sendNativeNotification({ notify: () => 'rejected' }, '', '', 'test', target), /被拒绝/);
   assert.equal(await sendNativeNotification({ notify: () => undefined }, '', '', 'old', target), false);
+  assert.equal(await sendNativeNotification({ notify: () => 'queued' }, '', '', 'older-harmony', target), false);
   assert.equal(await sendNativeNotification({ notify: async () => true }, '', '', 'windows', target), true);
 });

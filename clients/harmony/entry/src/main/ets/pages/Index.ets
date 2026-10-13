@@ -5,6 +5,7 @@ import { isTrustedJishiUrl } from './TrustedUrl';
 import { ReminderScheduler } from './ReminderScheduler';
 
 interface JishiNativeBridge {
+  notificationDeliveryReceipts: () => string;
   notify: (title: string, body: string, key: string) => string;
   requestNotificationPermission: () => string;
   notificationPermissionState: () => string;
@@ -33,6 +34,7 @@ struct Index {
   aboutToDisappear(): void { if (this.pageTimer >= 0) clearTimeout(this.pageTimer); }
   private scheduler: ReminderScheduler = new ReminderScheduler();
   private nativeBridge: JishiNativeBridge = {
+    notificationDeliveryReceipts: (): string => this.bridgeAllowed() ? 'supported' : 'unavailable',
     notify: (title: string, body: string, key: string): string => {
       if (!this.bridgeAllowed() || typeof title !== 'string' || typeof body !== 'string' || typeof key !== 'string') return 'rejected';
       if (this.scheduler.hasScheduled(key)) return 'sent';
@@ -138,7 +140,7 @@ struct Index {
         .javaScriptProxy({
           object: this.nativeBridge,
           name: 'JishiNative',
-          methodList: ['notify', 'requestNotificationPermission', 'notificationPermissionState', 'syncReminders'],
+          methodList: ['notify', 'requestNotificationPermission', 'notificationPermissionState', 'syncReminders', 'notificationDeliveryReceipts'],
           controller: this.controller,
           permission: '{"javascriptProxyPermission":{"urlPermissionList":[{"scheme":"https","host":"jishi.awaqwq233.com","port":"443","path":"/"},{"scheme":"https","host":"awaqwq233.com","port":"443","path":"/note/"}]}}'
         })

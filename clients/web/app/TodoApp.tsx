@@ -48,6 +48,7 @@ type NativeReminder = { key: string; title: string; body: string; at: number };
 type NativeBridge = {
   setBackgroundReminders?: (enabled: boolean) => void;
   notify: (title: string, body: string, key: string) => void | string | Promise<boolean>;
+  notificationDeliveryReceipts?: () => string;
   requestNotificationPermission?: () => void | Promise<string>;
   notificationPermissionState?: () => string | Promise<string>;
   reminderPermissionState?: () => string | Promise<string>;
