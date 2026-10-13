@@ -132,3 +132,15 @@ current 保存本次 0.4.10 / 0.3.6，previous 保存前一候选 0.4.9 / 0.3.5�
 最终发布材料提交 2897b4ea6a9e3db8f76c63c0986c324e9ff0d802 已推送；公开 GitHub Release clients-v0.4.10-a0.4.7 发布任务 38387952951 成功。服务器 --preflight 再次独立验证 Windows 0.4.10 / Android 0.4.7 资产大小、SHA256 和公开链接，生产秘密文件门禁、更新清单、依赖审计及 nginx -t 均通过。待用备份目录 /var/backups/jishi/previous-20261013-offline-sync 当前不存在，正式 apply 尚未执行。Windows 真实安装后通知日志为 installed_windows_scheduled_notification=pass；不能将其当作鸿蒙真机结果。
 
 内置浏览器当前页面清单显示“华为账号-登录”，再次读取页面操作连续超时；未上传 0.3.6、未提交审核。四项审核问题、离线同步与通知说明及正式 APP/图标/四张展示截图已整理入 releases/current/Jishi-Harmony-Store-Materials.zip，秘密和审核登录资料未打入材料包。生产备份、暂存历史和可重建残留清理仍等待部署成功及完整验收。
+
+## 2026-10-13 用户最终确认后的生产部署
+
+用户明确回复“确认部署”。已执行 sudo bash /opt/jishi-staging/server/deploy/native/deploy.sh --apply /opt/jishi-staging /var/backups/jishi/previous-20261013-offline-sync，部署源码 1125db0d35da56ea7ce102452cfd2c5d0588e2b1，运行功能源码 4c19317。完整备份 /var/backups/jishi/previous-20261013-offline-sync/production.tar.aesgcm（1028884523 字节）已解密逐字节比对并核验 SHA256。同步保留生产秘密、数据库与媒体；Nginx 仅合并 API Host / X-Forwarded-Host 修复，保留生产 Certbot TLS 段。
+
+服务 jishi-api / jishi-web / nginx 全部 active，内部 API/Web 健康检查通过。主站与 /note 首页、健康均 200；无效登录 JSON401、恶意/null/内部来源 JSON403。真实已有审核账号在两站登录和 bootstrap 均 200，积分与 3 件演示商品可读取；0.4.3 和 0.4.4 正常登录、bootstrap 均 200，Nginx 对应 4 个请求均 200，无新增异常响应。实际注册201、登录200和新事项持久化通过；同一创建 ID 重试只保留一条，旧版本修改和错误账号绑定返回 JSON409，主备站均读取到保存数据。测试只写独立验收账号，测试事项已软删除。
+
+与部署前加密备份逐表对比：11 个业务表、157 条旧业务记录、16 个媒体文件全部保留；全程未启动第二个 Wrangler 访问线上持久化目录。公网清单与实际 Web 哈希 b426708b717067dc0fc764c199d5e8d4873ccec5e925ef98db7fe875e11968bc 一致，required=true；Windows 0.4.10 与正式 Android 0.4.7 的公开下载、大小及 SHA256 核验通过。
+
+所有服务器验收通过后，保留当前完整回滚备份，删除上一份 previous-20261009-points-shop 备份及旧公开 Windows 0.4.6 / 0.4.7 安装包。过期 /opt/jishi-staging-before-offline-20261013、已用 /opt/jishi-staging 和本次 /tmp/jishi-offline-* / /tmp/jishi-previous-* 暂存包按核实路径清理。current / previous 保留两代完整交付物，签名与凭据保留在私有忽略目录。
+
+曾在停服备份阶段读取到旧进程退出状态而误判为启动异常；后续日志确认新服务正常启动，部署成功且没有回滚。认证契约集中请求曾触发生产 JSON429，调整到正常限流间隔后通过，未降低来源验证或限流。浏览器连接持续超时，未补拍上线后页面截图。鸿蒙 0.3.6 已正式签名但尚未真机测试、上传或提交商店审核；Android 0.4.10 仅编译候选，无原发布密钥，正式保留0.4.7。备案仍由用户办理。
