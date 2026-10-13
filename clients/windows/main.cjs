@@ -101,16 +101,16 @@ async function installTray() {
 
 async function openWindow() {
   const lastSiteFile = path.join(app.getPath('userData'), 'last-site.json');
+  let lastSite = APP_URLS[0];
+  try { const saved = JSON.parse(fs.readFileSync(lastSiteFile, 'utf8')); if (APP_URLS.includes(saved.url)) lastSite = saved.url; } catch { /* First installation uses the configured primary. */ }
   try {
-    const appUrl = await resolveAppUrl(APP_URLS, net.fetch, 1500);
+    const appUrl = await resolveAppUrl([lastSite, ...APP_URLS], net.fetch, 1500);
     if (SMOKE_TEST) { console.log(`JISHI_RESOLVED_URL=${appUrl}`); app.quit(); return; }
     fs.mkdirSync(path.dirname(lastSiteFile), { recursive: true });
     fs.writeFileSync(lastSiteFile, JSON.stringify({ url: appUrl }));
     createWindow(appUrl);
   } catch (error) {
     if (SMOKE_TEST) { console.error(error); app.exit(1); return; }
-    let lastSite = APP_URLS[0];
-    try { const saved = JSON.parse(fs.readFileSync(lastSiteFile, 'utf8')); if (APP_URLS.includes(saved.url)) lastSite = saved.url; } catch { /* First installation uses the configured primary. */ }
     createWindow(lastSite);
   }
 }

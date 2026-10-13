@@ -21,11 +21,14 @@ struct Index {
   private readonly primaryUrl: string = 'https://jishi.awaqwq233.com/';
   private readonly fallbackUrl: string = 'https://awaqwq233.com/note/';
   private offlineShell: boolean = false;
+  private offlineSite: string = 'https://jishi.awaqwq233.com/';
+  private triedAlternate: boolean = false;
   private pageTimer: number = -1;
   aboutToAppear(): void {
     PersistentStorage.persistProp('jishi-last-site', this.primaryUrl);
     const saved: string | undefined = AppStorage.get<string>('jishi-last-site');
     if (saved === this.primaryUrl || saved === this.fallbackUrl) this.currentUrl = saved;
+    this.offlineSite = this.currentUrl;
   }
   aboutToDisappear(): void { if (this.pageTimer >= 0) clearTimeout(this.pageTimer); }
   private scheduler: ReminderScheduler = new ReminderScheduler();
@@ -95,14 +98,16 @@ struct Index {
 
   private failOver(): void {
     if (this.offlineShell) { this.loadFailed = true; this.loading = false; return; }
-    if (this.currentUrl === this.primaryUrl) {
-      this.currentUrl = this.fallbackUrl;
+    if (!this.triedAlternate) {
+      this.triedAlternate = true;
+      this.currentUrl = this.currentUrl === this.primaryUrl ? this.fallbackUrl : this.primaryUrl;
       this.loadFailed = false;
       return;
     }
     this.offlineShell = true;
     this.loadFailed = false;
-    this.controller.loadUrl(this.currentUrl);
+    if (this.currentUrl !== this.offlineSite) this.currentUrl = this.offlineSite;
+    else this.controller.loadUrl(this.currentUrl);
   }
 
   private isTrustedUrl(url: string): boolean {
