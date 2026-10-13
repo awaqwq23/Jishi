@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 
 type Rules = { signinReward:number; signinPenalty:number; taskReward:number; taskPenalty:number; habitReward:number; habitPenalty:number };
-export type PointsData = { enabled:boolean; rules:Rules; balance:number; checkedIn:boolean; today:string; products:{id:string;name:string;cost:number}[]; ledger:{id:string;amount:number;label:string;createdAt:string}[] };
+export type PointsData = { provisional?:boolean; enabled:boolean; rules:Rules; balance:number; checkedIn:boolean; today:string; products:{id:string;name:string;cost:number}[]; ledger:{id:string;amount:number;label:string;createdAt:string}[] };
 type Props = { userId:string; value:PointsData; request:(path:string,method:string,body?:unknown)=>Promise<PointsData>; onChange:(value:PointsData)=>void };
 type Redemption = {productId:string; requestId:string};
 function pendingRedemption(key:string):Redemption|null {
@@ -40,6 +40,7 @@ export default function PointsBoard({ userId, value, request, onChange }: Props)
   };
   return <div className="points-board">
     <header className="topbar"><div><span className="eyebrow">每天积累一点进步</span><h1>打卡与积分商店</h1></div><strong className="points-balance">{value.balance} 积分</strong></header>
+    {value.provisional && <p className="points-help">本机积分预览，任务与习惯积分在联网后结算；兑换须完成同步并联网核对余额。</p>}
     <div className="status-tabs"><button className={tab==='checkin'?'active':''} onClick={()=>setTab('checkin')}>每日打卡</button><button className={tab==='shop'?'active':''} onClick={()=>setTab('shop')}>积分商店</button><button className={tab==='history'?'active':''} onClick={()=>setTab('history')}>积分记录</button></div>
     {error && <p role="alert" className="points-error">{error}</p>}{message && <p role="status">{message}</p>}
     {tab==='checkin' && <>

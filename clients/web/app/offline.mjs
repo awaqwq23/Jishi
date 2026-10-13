@@ -169,7 +169,14 @@ export class OfflineClient {
     if (!this.account) return this.transport(path, init);
     const method = init.method || 'GET';
     if (method === 'GET') {
-      if (path === '/api/points' && (this.offline || this.account.queue.length)) return clone(this.account.data.points);
+      if (path === '/api/points') {
+        if (this.offline || this.account.queue.length) {
+          const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+          if (this.account.data.points.today !== today) { this.account.data.points.today = today; this.account.data.points.checkedIn = false; }
+          return { ...clone(this.account.data.points), provisional: true };
+        }
+        const points = await this.transport(path, init); this.account.data.points = points; await this.save(); return points;
+      }
       return this.transport(path, init);
     }
     if (!/^\/api\/(todos|schedules|categories|presets|diary|profile)(\/|\?|$)/.test(path) && !['/api/points/rules', '/api/points/checkin', '/api/shop/products'].includes(path.split('?')[0])) {
@@ -180,6 +187,7 @@ export class OfflineClient {
     const operation = { id: crypto.randomUUID(), path, method, body, base: clone(entity(this.account.data, path, body)) };
     if (path === '/api/points/checkin') operation.body.date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
     const draft = clone(this.account.data), result = applyLocal(draft, operation);
+    if (path.startsWith('/api/points/') || path.startsWith('/api/shop/')) { result.provisional = true; draft.points.provisional = true; }
     // Persist the mutation and its retry identity together before reporting success.
     const oldData = this.account.data;
     this.account.data = draft; this.account.queue.push(operation);
@@ -242,6 +250,9 @@ export async function offlineRequest(path, init, transport) {
   return client.request(path, init);
 }
 export async function reconnect() { await client?.sync(); }
+export async function forgetLocalCredentials() {
+  if (client?.account) { client.account.credentials = null; await client.save(); }
+}
 export function exportLocalBackup() {
   if (!client?.account) return;
   const blob = new Blob([JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(), data: client.account.data, pending: client.account.queue }, null, 2)], { type: 'application/json' });
