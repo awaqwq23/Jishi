@@ -149,22 +149,49 @@ export function applyLocal(data, operation) {
 }
 
 export class OfflineClient {
-  constructor({ storage, transport, active, setActive, emit = () => {} }) {
-    Object.assign(this, { storage, transport, active, setActive, emit });
+  constructor({ storage, transport, active, setActive, emit = () => {}, legacyLogin = null, onLegacyImported = () => {} }) {
+    Object.assign(this, { storage, transport, active, setActive, emit, legacyLogin, onLegacyImported });
     this.account = null; this.busy = null; this.offline = false; this.issue = '';
+    this.legacyAutoEmail = ''; this.migration = null; this.requiresLogin = false;
+  }
+  async migrateLegacy() {
+    if (this.migration) return this.migration;
+    this.migration = (async () => {
+      const saved = this.legacyLogin;
+      if (!saved?.password || !saved.rememberPassword) return;
+      const email = String(saved.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || typeof saved.password !== 'string' || saved.password.length < 8) return;
+      const account = await this.storage.get(email) || { email, data: emptyAccount(email), queue: [], local: false };
+      account.credentials = await seal(saved.password);
+      await this.storage.put(email, account);
+      if (saved.autoLogin) this.legacyAutoEmail = email;
+      this.legacyLogin = null; this.onLegacyImported();
+    })();
+    return this.migration;
   }
   status() { return { offline: this.offline, pending: this.account?.queue.length || 0, issue: this.issue }; }
   notify() { this.emit(this.account ? clone(this.account.data) : null, this.status()); }
   async save() { await this.storage.put(this.account.email, this.account); this.notify(); }
   async open() {
+    await this.migrateLegacy();
     const email = this.active();
     if (email) this.account = await this.storage.get(email) || null;
     if (this.account) { this.notify(); void this.sync(); return clone(this.account.data); }
-    const data = await this.transport('/api/bootstrap');
-    this.account = { email: data.user.email.toLowerCase(), data, queue: [], credentials: null, local: false };
-    this.setActive(this.account.email); await this.save(); return clone(data);
+    let data;
+    try { data = await this.transport('/api/bootstrap'); }
+    catch (error) {
+      if (!this.legacyAutoEmail || !(unavailable(error) || error.status === 401)) throw error;
+      this.account = await this.storage.get(this.legacyAutoEmail);
+      this.setActive(this.account.email); this.notify(); void this.sync(); return clone(this.account.data);
+    }
+    const emailKey = data.user.email.toLowerCase();
+    this.account = await this.storage.get(emailKey) || { email: emailKey, data, queue: [], credentials: null, local: false };
+    if (!this.account.queue.length) this.account.data = data;
+    this.account.local = false;
+    await this.save(); this.setActive(this.account.email); void this.sync(); return clone(this.account.data);
   }
   async authenticate(mode, { email, password, name }) {
+    await this.migrateLegacy();
     email = String(email).trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8 || password.length > 128) throw fail('请填写有效邮箱和至少 8 位密码', 400);
     const saved = await this.storage.get(email);
@@ -186,13 +213,16 @@ export class OfflineClient {
       this.offline = true;
     }
     this.account.credentials = await seal(password);
-    this.setActive(email); await this.save(); void this.sync();
+    this.requiresLogin = false; this.issue = '';
+    await this.save(); this.setActive(email); void this.sync();
   }
   async request(path, init = {}) {
     if (path === '/api/bootstrap') return this.open();
     if (path === '/api/auth/logout') { this.setActive(''); this.account = null; try { await this.transport(path, init); } catch { /* Local sign-out is authoritative on this device. */ } return { ok: true }; }
     if (path.startsWith('/api/auth/')) return this.authenticate(path.endsWith('register') ? 'register' : 'login', JSON.parse(init.body));
     if (!this.account) return this.transport(path, init);
+    if (this.active() !== this.account.email) throw fail('另一个页面已切换账号，请重新打开此页面；原账号的待同步内容仍保留', 409);
+    const scopedInit = { ...init, headers: { ...(init.headers || {}), 'X-Jishi-Account-Email': this.account.email } };
     const method = init.method || 'GET';
     if (method === 'GET') {
       if (path === '/api/points') {
@@ -201,18 +231,23 @@ export class OfflineClient {
           if (this.account.data.points.today !== today) { this.account.data.points.today = today; this.account.data.points.checkedIn = false; }
           return { ...clone(this.account.data.points), provisional: true };
         }
-        const points = await this.transport(path, init); this.account.data.points = points; await this.save(); return points;
+        const points = await this.transport(path, scopedInit); this.account.data.points = points; await this.save(); return points;
       }
-      return this.transport(path, init);
+      return this.transport(path, scopedInit);
     }
     if (!/^\/api\/(todos|schedules|categories|presets|diary|profile)(\/|\?|$)/.test(path) && !['/api/points/rules', '/api/points/checkin', '/api/shop/products'].includes(path.split('?')[0])) {
       if (this.offline || this.account.queue.length) throw fail('请联网并完成同步后再操作积分、兑换或导入', 409);
-      return this.transport(path, init);
+      return this.transport(path, scopedInit);
     }
     const body = init.body ? JSON.parse(init.body) : {};
     const operation = { id: uuid(), path, method, body, base: clone(entity(this.account.data, path, body)) };
     if (path === '/api/points/checkin') operation.body.date = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
     const draft = clone(this.account.data), result = applyLocal(draft, operation);
+    if (method === 'POST' && ['/api/todos', '/api/schedules'].includes(path)) operation.body.clientCreatedAt = (result.todo || result.item).createdAt;
+    if (path.startsWith('/api/todos/') && body.status === 'completed') operation.body.clientCompletedAt = result.todo.completedAt;
+    if (path.startsWith('/api/schedules/') && path.endsWith('/completion') && result.record) operation.body.clientCompletedAt = result.record.completedAt;
+    if (path.startsWith('/api/diary/') && !operation.base) operation.body.clientCreatedAt = result.entry.createdAt;
+    if (path === '/api/points/rules' && !this.account.data.points.enabled) operation.body.clientEnabledAt = new Date().toISOString();
     if (path.startsWith('/api/points/') || path.startsWith('/api/shop/')) { result.provisional = true; draft.points.provisional = true; }
     // Persist the mutation and its retry identity together before reporting success.
     const oldData = this.account.data;
@@ -221,6 +256,7 @@ export class OfflineClient {
     void this.sync(); return result;
   }
   async sync() {
+    if (this.requiresLogin) return;
     if (!this.account || this.busy) return this.busy;
     const account = this.account;
     this.busy = this.flush(account).finally(() => { this.busy = null; });
@@ -228,9 +264,11 @@ export class OfflineClient {
   }
   async flush(account) {
     try {
+      if (this.active() !== account.email) return;
       let cloud;
       try { if (!account.local) cloud = await this.transport('/api/bootstrap'); }
       catch (error) { if (error.status !== 401) throw error; }
+      if (cloud?.user.email.toLowerCase() !== account.email) cloud = null;
       if (!cloud && account.credentials) {
         const password = await unseal(account.credentials);
         if (account.local) {
@@ -241,7 +279,7 @@ export class OfflineClient {
       }
       cloud ||= await this.transport('/api/bootstrap');
       if (cloud.user.email.toLowerCase() !== account.email) throw fail('云端账号与本机账号不同，已暂停同步', 409);
-      if (this.account !== account) return;
+      if (this.account !== account || this.active() !== account.email) return;
       this.offline = false; this.issue = ''; account.local = false;
       while (account.queue.length) {
         const operation = account.queue[0], current = entity(cloud, operation.path, operation.body);
@@ -251,7 +289,8 @@ export class OfflineClient {
           const fields = operation.method === 'DELETE' ? Object.keys(operation.base).filter(x => x !== 'updatedAt') : Object.keys(operation.body);
           if (!current || fields.some(key => JSON.stringify(current[key]) !== JSON.stringify(operation.base[key]) && JSON.stringify(current[key]) !== JSON.stringify(operation.body[key]))) throw fail('同一条内容在云端也有修改，本地修改已保留，请导出备份后处理冲突', 409);
         }
-        await this.transport(operation.path, { method: operation.method, headers: { 'X-Jishi-Create-Id': operation.id, ...(current?.updatedAt ? { 'If-Match': current.updatedAt } : {}) }, body: operation.method === 'DELETE' ? undefined : JSON.stringify(operation.body) });
+        if (this.active() !== account.email) return;
+        await this.transport(operation.path, { method: operation.method, headers: { 'X-Jishi-Account-Email': account.email, 'X-Jishi-Create-Id': operation.id, ...(current?.updatedAt ? { 'If-Match': current.updatedAt } : {}) }, body: operation.method === 'DELETE' ? undefined : JSON.stringify(operation.body) });
         account.queue.shift();
         await this.storage.put(account.email, account);
         cloud = await this.transport('/api/bootstrap');
@@ -261,18 +300,27 @@ export class OfflineClient {
     } catch (error) {
       if (this.account !== account) return;
       this.offline = unavailable(error); this.issue = this.offline ? '' : error.message;
+      if (error.status === 401 || error.status === 429) { this.requiresLogin = true; this.issue = '云端登录未通过。请在“我的”退出并重新登录以更新本机密码；本机记录及待同步内容仍保留'; }
       this.notify();
     }
   }
 }
 
-let client;
-export async function offlineRequest(path, init, transport) {
-  if (path === '/api/bootstrap' && localStorage.getItem(`${ACTIVE}:signed-out`) === 'true') throw fail('请先登录后再继续', 401);
-  if (!client) client = new OfflineClient({ storage: await deviceStore(), transport, active: () => localStorage.getItem(ACTIVE), setActive: email => {
+let client, initializing;
+export async function offlineRequest(path, init, transport, legacyLogin, onLegacyImported) {
+  if (!client) {
+    initializing ||= (async () => new OfflineClient({ storage: await deviceStore(), transport, legacyLogin, onLegacyImported, active: () => localStorage.getItem(ACTIVE), setActive: email => {
     if (email) { localStorage.setItem(ACTIVE, email); localStorage.removeItem(`${ACTIVE}:signed-out`); }
     else { localStorage.removeItem(ACTIVE); localStorage.setItem(`${ACTIVE}:signed-out`, 'true'); }
-  }, emit: (data, status) => window.dispatchEvent(new CustomEvent('jishi-local-data', { detail: { data, status } })) });
+    }, emit: (data, status) => window.dispatchEvent(new CustomEvent('jishi-local-data', { detail: { data, status } })) }))();
+    client = await initializing;
+  }
+  await client.migrateLegacy();
+  if (path === '/api/bootstrap' && localStorage.getItem(`${ACTIVE}:signed-out`) === 'true') throw fail('请先登录后再继续', 401);
+  if (!client.storageListenerInstalled) {
+    client.storageListenerInstalled = true;
+    window.addEventListener('storage', event => { if (event.key === ACTIVE && client.account && event.newValue !== client.account.email) { client.account = null; window.location.reload(); } });
+  }
   return client.request(path, init);
 }
 export async function reconnect() { await client?.sync(); }

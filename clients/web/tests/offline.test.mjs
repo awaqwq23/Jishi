@@ -9,6 +9,7 @@ function fixture() {
   const data = { user: { id: 'cloud-user', email: 'offline@example.test', name: '离线测试', settings: {} }, todos: [], categories: [], reminderPresets: [], schedules: [], scheduleRecords: [], diaryEntries: [], points: {} };
   const transport = async (path, init = {}) => {
     if (!connected) throw new TypeError('network unavailable');
+    if (path === '/api/auth/login') { data.user.email = JSON.parse(init.body).email; return { ok: true }; }
     if (path.startsWith('/api/auth/')) return { ok: true };
     if (path === '/api/bootstrap') return structuredClone(data);
     const body = JSON.parse(init.body || '{}');
@@ -22,7 +23,7 @@ function fixture() {
     return {};
   };
   const storage = { async get(key) { return structuredClone(records.get(key)); }, async put(key, value) { records.set(key, structuredClone(value)); } };
-  const newClient = (Client = OfflineClient) => new Client({ storage, transport, active: () => active, setActive: value => { active = value; } });
+  const newClient = (Client = OfflineClient, options = {}) => new Client({ storage, transport, active: () => active, setActive: value => { active = value; }, ...options });
   return { newClient, records, data, online: () => { connected = true; }, offline: () => { connected = false; }, lose: () => { loseResponse = true; } };
 }
 
@@ -42,6 +43,25 @@ test('offline registration, password verification and pending edits survive a ne
   assert.equal(restarted.status().pending, 0);
   assert.equal(f.data.todos.length, 1);
   assert.equal(f.data.todos[0].title, '断网时保存');
+});
+
+test('legacy remembered passwords migrate before clearing and retain offline auto-login', async () => {
+  const f = fixture(); let cleared = false;
+  const client = f.newClient(OfflineClient, { legacyLogin: { email: 'offline@example.test', password: 'legacy-secret-123', rememberPassword: true, autoLogin: true }, onLegacyImported() { cleared = true; } });
+  const data = await client.open(); await client.sync();
+  assert.equal(data.user.email, 'offline@example.test'); assert.equal(cleared, true);
+  assert.ok(f.records.get('offline@example.test').credentials);
+  assert.ok(!JSON.stringify(f.records.get('offline@example.test')).includes('legacy-secret-123'));
+  await client.authenticate('login', { email: 'offline@example.test', password: 'legacy-secret-123' }); await client.sync();
+});
+
+test('a stale cookie from another account is replaced before uploading the selected account', async () => {
+  const f = fixture(), client = f.newClient();
+  await client.authenticate('register', { email: 'offline@example.test', password: 'test-secret-123' }); await client.sync();
+  await client.request('/api/todos', { method: 'POST', body: JSON.stringify({ title: 'Selected account only' }) }); await client.sync();
+  f.online(); f.data.user.email = 'other@example.test'; await client.sync();
+  assert.equal(f.data.user.email, 'offline@example.test'); assert.equal(client.status().pending, 0);
+  assert.equal(f.data.todos[0].title, 'Selected account only');
 });
 
 test('older WebViews without structuredClone or randomUUID can persist and synchronize offline data', async () => {

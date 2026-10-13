@@ -112,7 +112,6 @@ function readDeviceLogin(): DeviceLogin {
   if (typeof window === "undefined") return defaultDeviceLogin;
   try {
     const saved = { ...defaultDeviceLogin, ...JSON.parse(localStorage.getItem(DEVICE_LOGIN_KEY) || "{}") };
-    if (saved.password) localStorage.setItem(DEVICE_LOGIN_KEY, JSON.stringify({ ...saved, password: "" }));
     return saved;
   }
   catch { return defaultDeviceLogin; }
@@ -230,7 +229,8 @@ function toInputDate(value: string | null) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  return await offlineRequest(url, init, networkApi) as T;
+  const legacy = readDeviceLogin();
+  return await offlineRequest(url, init, networkApi, legacy, () => writeDeviceLogin({ ...legacy, password: '' })) as T;
 }
 async function networkApi(url: string, init?: RequestInit): Promise<unknown> {
   const controller = new AbortController();
@@ -843,7 +843,7 @@ export default function TodoApp() {
   const uploadImage = async (file: File, kind: "avatar" | "background") => {
     if (!data) return;
     if (kind === "background") { await writeLocalBackground(data.user.id, file); replaceBackgroundObjectUrl(file); flash("背景图片已保存在本机"); return; }
-    const response = await fetch(apiUrl("/api/media?kind=avatar"), { method: "PUT", credentials: "include", headers: { "Content-Type": file.type }, body: file });
+    const response = await fetch(apiUrl("/api/media?kind=avatar"), { method: "PUT", credentials: "include", headers: { "Content-Type": file.type, 'X-Jishi-Account-Email': data.user.email }, body: file });
     const result = await response.json(); if (!response.ok) throw new Error(result.error || "头像上传失败");
     await saveProfile({ avatarUrl: result.url });
   };

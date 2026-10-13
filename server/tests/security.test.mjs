@@ -35,6 +35,7 @@ after(async () => { await runtime?.dispose(); });
 
 test('offline creation retries keep stable IDs, ownership and conditional edits', async () => {
   const id = randomUUID();
+  await json(await call('/api/todos', { cookie: alice.cookie, method: 'POST', headers: { 'X-Jishi-Account-Email': bob.email }, body: { title: 'Must not enter another account' } }), 409);
   const created = await json(await call('/api/todos', { cookie: alice.cookie, method: 'POST', headers: { 'X-Jishi-Create-Id': id }, body: { title: 'Offline creation' } }), 201);
   assert.equal(created.todo.id, id);
   const retried = await json(await call('/api/todos', { cookie: alice.cookie, method: 'POST', headers: { 'X-Jishi-Create-Id': id }, body: { title: 'Offline creation' } }), 200);
@@ -45,6 +46,22 @@ test('offline creation retries keep stable IDs, ownership and conditional edits'
   assert.equal(changed.todo.title, 'Synchronized');
   const data = await json(await call('/api/bootstrap', { cookie: alice.cookie }), 200);
   assert.equal(data.todos.filter(x => x.id === id).length, 1);
+});
+
+test('offline habit dates and points survive delayed upload without losing past completions', async () => {
+  const owner = await account('OfflineDates'), cookie = owner.cookie;
+  const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+  const date = new Date(Date.now() - 86400000 + 8 * 3600000).toISOString().slice(0, 10);
+  const enabled = new Date(`${date}T00:00:00+08:00`).toISOString();
+  const completed = new Date(`${date}T12:00:00+08:00`).toISOString();
+  await json(await call('/api/points/rules', { cookie, method: 'PUT', body: { signinReward: 5, signinPenalty: 0, taskReward: 10, taskPenalty: 0, habitReward: 7, habitPenalty: 3, clientEnabledAt: enabled } }), 200);
+  const { item } = await json(await call('/api/schedules', { cookie, method: 'POST', body: { title: 'Yesterday offline habit', kind: 'habit', recurrence: 'daily', startDate: date, clientCreatedAt: enabled } }), 201);
+  assert.equal(item.createdAt, enabled);
+  let value = await json(await call(`/api/schedules/${item.id}/completion`, { cookie, method: 'PUT', body: { occurrenceDate: date, completed: true, clientCompletedAt: completed } }), 200);
+  assert.equal(value.record.completedAt, completed); assert.equal(value.points.balance, 7);
+  value = await json(await call(`/api/schedules/${item.id}/completion`, { cookie, method: 'PUT', body: { occurrenceDate: date, completed: true, clientCompletedAt: completed } }), 200);
+  assert.equal(value.points.balance, 7);
+  assert.equal(value.points.today, today);
 });
 
 test('check-in, custom rules, shop and redeemed balance survive a server restart', async () => {

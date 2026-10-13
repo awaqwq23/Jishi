@@ -1,5 +1,5 @@
-import { ApiError, requestOriginAllowed, checkRequestOrigin, limitAuth, readBytes, readJson, sameSecret, trustedGateway } from "./security";
-import { pointsSchema, pointsAction, pointsState, settlePoints } from "./points";
+import { ApiError, clientTimestamp, requestOriginAllowed, checkRequestOrigin, limitAuth, readBytes, readJson, sameSecret, trustedGateway } from "./security";
+import { beijingDate, pointsSchema, pointsAction, pointsState, settlePoints } from "./points";
 
 export interface Env {
   DB: D1Database;
@@ -78,7 +78,7 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Jishi-Create-Id, If-Match",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Jishi-Create-Id, If-Match, X-Jishi-Account-Email",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, PUT, OPTIONS",
     "Vary": "Origin",
   };
@@ -286,7 +286,7 @@ async function createTodo(request: Request, env: Env, user: User) {
   const presetId = body.reminderPresetId ? String(body.reminderPresetId) : null;
   await validateTodoReferences(env, user, body.categoryId, presetId);
   const preset = presetId ? await env.DB.prepare("SELECT offsets_json FROM reminder_presets WHERE id=? AND user_id=?").bind(presetId, user.id).first<{ offsets_json: string }>() : null;
-  await env.DB.prepare("INSERT INTO todos (id,user_id,title,content,deadline,reminder_preset_id,reminder_offsets_json,category_id,priority,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,'active',?,?)").bind(id, user.id, title, String(body.content || ""), body.deadline || null, presetId, preset?.offsets_json || "[]", body.categoryId || null, body.priority || "normal", String(body.notes || ""), now, now).run();
+  await env.DB.prepare("INSERT INTO todos (id,user_id,title,content,deadline,reminder_preset_id,reminder_offsets_json,category_id,priority,notes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,'active',?,?)").bind(id, user.id, title, String(body.content || ""), body.deadline || null, presetId, preset?.offsets_json || "[]", body.categoryId || null, body.priority || "normal", String(body.notes || ""), clientTimestamp(body.clientCreatedAt, now), now).run();
   const row = await env.DB.prepare("SELECT * FROM todos WHERE id=?").bind(id).first<Json>();
   return response(request, env, { todo: todo(row || {}) }, 201);
 }
@@ -299,7 +299,7 @@ async function updateTodo(request: Request, env: Env, user: User, id: string) {
   const title = String(pick("title", "title") || "").trim(); if (!title || title.length > 60) return response(request, env, { error: "标题应为 1 至 60 个字" }, 400);
   const status = String(pick("status", "status")); const now = new Date().toISOString();
   let completedAt = current.completed_at; let deletedAt = current.deleted_at;
-  if (status === "completed" && current.status !== "completed") completedAt = now;
+  if (status === "completed" && current.status !== "completed") completedAt = clientTimestamp(body.clientCompletedAt, now);
   if (status === "deleted" && current.status !== "deleted") deletedAt = now;
   if (status === "active") { completedAt = null; deletedAt = null; }
   const presetId = pick("reminderPresetId", "reminder_preset_id");
@@ -382,7 +382,12 @@ async function schedules(request: Request, env: Env, user: User, id?: string) {
     if ((recurrence === "weekly" || recurrence === "custom") && !weekdays.length) return response(request, env, { error: "请至少选择一个星期" }, 400);
     const itemId = creationId(request);
     await env.DB.prepare("INSERT INTO schedule_items (id,user_id,kind,title,notes,recurrence,start_date,time_of_day,weekdays_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'active',?,?)")
-      .bind(itemId, user.id, kind, title, String(body.notes || "").slice(0, 2000), recurrence, startDate, timeOfDay, JSON.stringify(weekdays), now, now).run();
+      .bind(itemId, user.id, kind, title, String(body.notes || "").slice(0, 2000), recurrence, startDate, timeOfDay, JSON.stringify(weekdays), clientTimestamp(body.clientCreatedAt, now), now).run();
+    if (body.clientCreatedAt !== undefined) {
+      const cutoff = beijingDate(new Date(Date.now() - 30 * 86400000));
+      const born = beijingDate(new Date(clientTimestamp(body.clientCreatedAt, now)));
+      await env.DB.prepare("UPDATE point_rules SET settled_date=MIN(settled_date,MAX(?,date(started_at,'+8 hours'))) WHERE user_id=?").bind(born < cutoff ? cutoff : born, user.id).run();
+    }
     const row = await env.DB.prepare("SELECT * FROM schedule_items WHERE id=? AND user_id=?").bind(itemId, user.id).first<Json>();
     return response(request, env, { item: scheduleItem(row || {}) }, 201);
   }
@@ -391,10 +396,12 @@ async function schedules(request: Request, env: Env, user: User, id?: string) {
   if (!current) return response(request, env, { error: "计划不存在" }, 404);
   if (request.method === "DELETE") {
     if (current.status !== "deleted") return response(request, env, { error: "请先将计划移入回收站" }, 400);
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM schedule_records WHERE item_id=? AND user_id=?").bind(id, user.id),
-      env.DB.prepare("DELETE FROM schedule_items WHERE id=? AND user_id=?").bind(id, user.id),
+    const expected = request.headers.get('If-Match');
+    const changed = await env.DB.batch([
+      env.DB.prepare("DELETE FROM schedule_records WHERE item_id=? AND user_id=? AND EXISTS (SELECT 1 FROM schedule_items WHERE id=? AND user_id=? AND status='deleted' AND (? IS NULL OR updated_at=?))").bind(id, user.id, id, user.id, expected, expected),
+      env.DB.prepare("DELETE FROM schedule_items WHERE id=? AND user_id=? AND status='deleted' AND (? IS NULL OR updated_at=?)").bind(id, user.id, expected, expected),
     ]);
+    if (expected && !changed[1].meta.changes) throw new ApiError(409, '云端内容已改变，本地修改已保留');
     return response(request, env, { ok: true });
   }
   const body = await readJson(request);
@@ -428,7 +435,7 @@ async function scheduleCompletion(request: Request, env: Env, user: User, id: st
   }
   const now = new Date().toISOString(); const recordId = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO schedule_records (id,user_id,item_id,occurrence_date,completed_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id,item_id,occurrence_date) DO UPDATE SET completed_at=excluded.completed_at")
-    .bind(recordId, user.id, id, occurrenceDate, now).run();
+    .bind(recordId, user.id, id, occurrenceDate, clientTimestamp(body.clientCompletedAt, now)).run();
   const row = await env.DB.prepare("SELECT * FROM schedule_records WHERE user_id=? AND item_id=? AND occurrence_date=?").bind(user.id, id, occurrenceDate).first<Json>();
   return response(request, env, { record: scheduleRecord(row || {}), points: await pointsState(env.DB, user.id) });
 }
@@ -440,7 +447,7 @@ async function diary(request: Request, env: Env, user: User, entryDate: string) 
   if (content.length > 100_000) return response(request, env, { error: "单篇日记不能超过 100000 个字" }, 413);
   const now = new Date().toISOString(); const id = crypto.randomUUID();
   const changed = await env.DB.prepare("INSERT INTO diary_entries (id,user_id,entry_date,content,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id,entry_date) DO UPDATE SET content=excluded.content,updated_at=excluded.updated_at WHERE ? IS NULL OR diary_entries.updated_at=?")
-    .bind(id, user.id, entryDate, content, now, now, request.headers.get('If-Match'), request.headers.get('If-Match')).run();
+    .bind(id, user.id, entryDate, content, clientTimestamp(body.clientCreatedAt, now), now, request.headers.get('If-Match'), request.headers.get('If-Match')).run();
   if (!changed.meta.changes) throw new ApiError(409, '云端内容已改变，本地修改已保留');
   const row = await env.DB.prepare("SELECT * FROM diary_entries WHERE user_id=? AND entry_date=?").bind(user.id, entryDate).first<Json>();
   return response(request, env, { entry: diaryEntry(row || {}) });
@@ -567,13 +574,20 @@ export default {
       if (url.pathname === "/api/auth/login" && request.method === "POST") return await login(request, env);
       if (url.pathname === "/api/auth/logout" && request.method === "POST") return authResponse(request, env, { ok: true }, sessionCookie(request, "", 0));
       const user = await userFrom(request, env); if (!user) return response(request, env, { error: "请先登录后再继续" }, 401);
+      const expectedEmail = request.headers.get('X-Jishi-Account-Email');
+      if (expectedEmail && expectedEmail.trim().toLowerCase() !== user.email.toLowerCase()) return response(request, env, { error: '云端账号已改变，本机记录仍保留，请重新登录后同步' }, 409);
       await prepareUser(env, user);
       const repeated = await offlinePrecondition(request, env, user); if (repeated) return repeated;
       if (url.pathname === '/api/points' || url.pathname.startsWith('/api/points/') || url.pathname.startsWith('/api/shop/')) { await prepareUser(env, user); return response(request, env, await pointsAction(request, env.DB, user.id)); }
       if (url.pathname === "/api/bootstrap" && request.method === "GET") return await bootstrap(request, env, user);
       if (url.pathname === "/api/todos" && request.method === "POST") return await createTodo(request, env, user);
       const todoMatch = url.pathname.match(/^\/api\/todos\/([^/]+)$/); if (todoMatch && request.method === "PATCH") return await updateTodo(request, env, user, todoMatch[1]);
-      if (todoMatch && request.method === "DELETE") { await prepareUser(env, user); await env.DB.prepare("DELETE FROM todos WHERE id=? AND user_id=? AND status='deleted'").bind(todoMatch[1], user.id).run(); return response(request, env, { ok: true }); }
+      if (todoMatch && request.method === "DELETE") {
+        await prepareUser(env, user); const expected = request.headers.get('If-Match');
+        const changed = await env.DB.prepare("DELETE FROM todos WHERE id=? AND user_id=? AND status='deleted' AND (? IS NULL OR updated_at=?)").bind(todoMatch[1], user.id, expected, expected).run();
+        if (expected && !changed.meta.changes) throw new ApiError(409, '云端内容已改变，本地修改已保留');
+        return response(request, env, { ok: true });
+      }
       if (url.pathname === "/api/categories" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return await categories(request, env, user);
       if (url.pathname === "/api/presets" && (request.method === "POST" || request.method === "PATCH" || request.method === "DELETE")) return await presets(request, env, user);
       if (url.pathname === "/api/schedules" && request.method === "POST") return await schedules(request, env, user);

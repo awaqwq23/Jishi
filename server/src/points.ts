@@ -1,4 +1,4 @@
-import { ApiError, readJson } from './security';
+import { ApiError, clientTimestamp, readJson } from './security';
 
 type Row = Record<string, unknown>;
 export const pointsSchema = [
@@ -84,7 +84,9 @@ export async function pointsAction(request: Request, db: D1Database, userId: str
   const now = new Date().toISOString();
   if (path === '/api/points/rules' && request.method === 'PUT') {
     const values = ['signinReward','signinPenalty','taskReward','taskPenalty','habitReward','habitPenalty'].map(key => integer(body[key]));
-    await db.prepare('INSERT INTO point_rules (user_id,signin_reward,signin_penalty,task_reward,task_penalty,habit_reward,habit_penalty,started_at,settled_date) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET signin_reward=excluded.signin_reward,signin_penalty=excluded.signin_penalty,task_reward=excluded.task_reward,task_penalty=excluded.task_penalty,habit_reward=excluded.habit_reward,habit_penalty=excluded.habit_penalty').bind(userId, ...values, now, beijingDate()).run();
+    const supplied = clientTimestamp(body.clientEnabledAt, now);
+    const started = new Date(Math.max(Date.parse(supplied), Date.now() - 30 * 86400000)).toISOString();
+    await db.prepare('INSERT INTO point_rules (user_id,signin_reward,signin_penalty,task_reward,task_penalty,habit_reward,habit_penalty,started_at,settled_date) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET signin_reward=excluded.signin_reward,signin_penalty=excluded.signin_penalty,task_reward=excluded.task_reward,task_penalty=excluded.task_penalty,habit_reward=excluded.habit_reward,habit_penalty=excluded.habit_penalty').bind(userId, ...values, started, beijingDate(new Date(started))).run();
   } else if (path === '/api/points/checkin' && request.method === 'POST') {
     const rules = await db.prepare('SELECT signin_reward FROM point_rules WHERE user_id=?').bind(userId).first<{signin_reward:number}>();
     if (!rules) throw new ApiError(400, '请先保存积分规则以开启打卡');

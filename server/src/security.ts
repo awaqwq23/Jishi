@@ -2,6 +2,13 @@ export class ApiError extends Error {
   constructor(public status: number, message: string, public retryAfter?: number) { super(message); }
 }
 
+export function clientTimestamp(value: unknown, fallback = new Date().toISOString()): string {
+  if (value === undefined) return fallback;
+  const timestamp = typeof value === 'string' && value.includes('T') ? Date.parse(value) : NaN;
+  if (!Number.isFinite(timestamp) || timestamp < 0) throw new ApiError(400, '离线记录时间无效');
+  return new Date(Math.min(timestamp, Date.parse(fallback))).toISOString();
+}
+
 export interface SecurityEnv {
   DB: D1Database;
   ALLOWED_ORIGINS?: string;
