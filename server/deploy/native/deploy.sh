@@ -117,6 +117,8 @@ secret_gate
 systemctl daemon-reload
 systemctl start jishi-api
 curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://127.0.0.1:8787/health >/dev/null
+test "$(systemctl show jishi-api --property=MemorySwapMax --value)" = 402653184
+test "$(systemctl show jishi-api --property=OOMPolicy --value)" = kill
 systemctl start jishi-web
 curl -fsS --retry 15 --retry-delay 2 --retry-connrefused http://127.0.0.1:3000/health >/dev/null
 nginx -t

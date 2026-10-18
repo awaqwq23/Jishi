@@ -60,6 +60,7 @@
 - Nginx 直连 Wrangler API 时使用后端 Host（当前为 127.0.0.1:8787）并保留 X-Forwarded-Host，避免 Wrangler 按外部 Host 重写浏览器 Origin。子域名登录/注册修复必须用实际代理验证合法注册/登录成功与恶意来源 JSON 403；不得添加内部来源、信任 User-Agent 或禁用来源校验绕过问题。
 - `jishi-api` 运行时禁止再启动 `wrangler d1 execute --local --persist-to /var/lib/jishi` 等第二个 Wrangler 进程访问同一持久化目录；在线只读核验使用 SQLite 只读连接，写入/迁移操作必须由 systemd 的单一 API 实例执行或先停服务。
 - 修改 systemd 沙箱时，暂存启动测试必须覆盖完整的生产限制组合，不能只测试其中几项。Node/Wrangler 的网卡枚举需要 `AF_NETLINK`，限制地址族时必须保留，否则会报 `uv_interface_addresses ... error 97`。同时验证 API/Web 实际启动和 HTTP 健康检查。
+- API 必须保留有限的 `MemorySwapMax` 与 `OOMPolicy=kill`；仅有 `MemoryMax` 会在交换空间无限制时持续换页，出现 active 但全部请求超时。暂存验收须核对 cgroup 的实际交换上限、整组 OOM 策略与 API/Web 健康响应；故障时先取证，再恢复，禁止用增加交换空间替代修复。
 
 ## 生产部署流程
 

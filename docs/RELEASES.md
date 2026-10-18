@@ -181,3 +181,15 @@ API / Web / Nginx 全部 active，内部健康和主备站主页及健康均 200
 全部服务器验收通过后，保留上述唯一完整回滚备份，删除 previous-20261013-offline-sync 旧备份和公开 Windows 0.4.9 包。核实绝对路径后删除 /opt/jishi-staging 及本次五个 /tmp/jishi-guest-* 文件；本机只清理 obsolete-before-guest-20261013、重复鸿蒙构建与分段下载，保留当前 0.4.11 / 0.3.7 和前一代 0.4.10 / 0.3.6、签名凭据及 Android 0.4.11 未签名候选。正式 Android 两代均为 0.4.7。
 
 完整服务器报告保存在回滚备份的 verification-complete、production-contracts.json、legacy-acceptance.json、real-account-acceptance.json、old-data-verification.json、staging-cleanup-plan.json；本机汇总为私有 .local/review/production-guest-acceptance.json。鸿蒙 0.3.7（3000007）正式包和上架材料已更新，未真机验收、未由本轮上传或提交 AGC。浏览器本轮连接两次超时，未补拍生产页面；之前实际本机网页的游客及迁移截图仍保留，不能当作生产或手机真机截图。备案仍由用户办理。
+
+## 2026-10-18 持续离线故障恢复与内存防护准备
+
+用户报告拾光记事一直显示离线。只读排查确认三个服务均 active，但内部 API/Web 健康请求超时，Nginx 持续记录 `/note/api/bootstrap` 上游超时。主机物理内存约 836 MiB，2 GiB 交换空间耗尽；API cgroup 内存约 300 MiB、交换约 1.9 GB，`MemorySwapMax=infinity`，内存上限触发计数超过 2600 万，未触发 OOM，造成持续换页而不退出。
+
+验证生产秘密文件普通文件/权限 600/服务所有者及密钥长度通过，确认全部五个迁移已执行、11 个账号可读后，按用户故障修复授权执行 `sudo systemctl restart jishi-api`，北京时间约 09:09 恢复公网响应。现有 Web `web-5868378493343d61` 与安装包版本保持。真实既有账号在主备站、Windows 0.4.3/0.4.4/0.4.11 的登录、bootstrap、积分、旧导出共 24 项为 200；未使用第二个 Wrangler 访问生产持久化目录。
+
+防复发候选仅增加 API `MemorySwapMax=384M`、`OOMPolicy=kill`，配合已有 `Restart=on-failure`，并在常规部署脚本增加生效检查。本条所在修复提交包含服务配置、部署检查与故障记录。Windows 本机 Server 17、Web 28、Windows 12、备份/哈希 2 项测试，以及类型检查、dry-run、lint、构建、更新契约通过；审计无高危或严重项，8 项既有中危。首次本机检查因默认配置目录权限失败，改用项目忽略目录后全套通过。
+
+Linux 独立暂存使用当前生产已安装依赖、独立数据库副本和完整生产 systemd 限制验证 API/Web 启动、20 次健康请求、JSON 401，并直接核对 `memory.max=314572800`、`memory.swap.max=402653184`、`memory.oom.group=1`。首次隔离启动因测试目录缺少 `.wrangler` 失败，补齐后通过；测试实例已停止。此轮只验证运行资源配置，未重新安装 Linux 依赖或改动业务源码。独立空库的五个迁移也已执行通过。
+
+暂存报告为 `/opt/jishi-staging/memory-guard-verification.json`，本机真实账号报告为 `.local/review/offline-recovery-account.json`。持久化切换脚本语法检查及 `--preflight` 通过，拟执行 `sudo bash /opt/jishi-staging/apply-memory-guard.sh --apply /var/backups/jishi/previous-20261018-api-memory`；正式 apply 尚未执行，须取得对准确命令、完整加密备份、短暂停机与失败回滚的最终明确确认。该备份尚未创建，现有唯一生产回滚备份与生产秘密、数据库、媒体、Nginx 和更新清单均保留，未执行历史清理。内存防护限制故障影响，不代表已查明运行器内部长期内存增长的原因，亦未做手机真机验收。
