@@ -10,7 +10,7 @@
 - Windows 原生候选升至 0.4.12。Vite 从 8.2.1 更新至 8.3.5，审计从 1 项高危恢复为 0 漏洞。
 - 本机 Windows 14 项、Web 29 项测试、lint、类型检查与生产构建通过；新增空队列到时保留、弹窗失败重试和同步静默回归。首次沙箱测试因临时文件重命名受限失败，在正常环境复测通过。
 - Linux 独立暂存 Server 17 项、Web 29 项、Windows 14 项、全新 5 个迁移、完整 systemd 沙箱启动/JSON 401/账号 bootstrap/积分及实际 MemorySwapMax 与 OOMPolicy 核验通过。Windows/Linux Web 哈希一致（0423ab0c27442b7b6fe7d80d5ea8d138f59c098db7ab1c18c0d40fbd3dc0d7d9）。本机隔离安装和可见到时弹窗验收通过，最终提交的 GitHub 构建 39890748596 同样通过安装、主机解析与可见弹窗验收。正式候选取该 CI 产物，SHA-256 DA8EFCD7E1ED577585DBACC8A4E2AB15AE44F8B6670E6B394FF5E5C4F13E1DF5，更新契约通过。修复提交 bbc2c27、验收提交 486cbbe 已推送。
-- 公开资产和生产发布仍待最终验证。生产只读健康检查成功；未停服务、未切换清单、未清理备份。部署拟建完整加密备份 /var/backups/jishi/previous-20261023-quiet-reminders/production.tar.aesgcm；按 AGENTS.md 展示准确命令、停机及回滚并取得最终确认后才能切换。
+- 最终发布提交 6aec1eb 已推送；公开 GitHub Release 两个资产的大小、SHA-256、下载地址校验通过（发布流水线 39892023362）。最终 /opt/jishi-staging 更新契约、零漏洞审计、秘密文件门禁、服务状态和 Nginx 配置预检全部通过。旧暂存保留为 /opt/jishi-staging-before-quiet-20261023。未停服务、未切换线上清单、未清理生产备份。部署拟建完整加密备份 /var/backups/jishi/previous-20261023-quiet-reminders/production.tar.aesgcm；按 AGENTS.md 展示准确命令、停机及回滚并取得最终确认后才能切换。
 
 ## 当前正式版（2026-10-09）
 
