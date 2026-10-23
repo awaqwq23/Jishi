@@ -131,10 +131,11 @@ async function openWindow() {
 ipcMain.on("jishi:notify", (event, title, body, key) => { if (isTrustedSender(event)) void showNativeNotification(BrowserWindow.fromWebContents(event.sender), title, body, key).catch(() => event.sender.send('jishi:reminder-error')); });
 ipcMain.handle("jishi:notify-confirmed", (event, title, body, key) => { if (!isTrustedSender(event)) return false; return showNativeNotification(BrowserWindow.fromWebContents(event.sender), title, body, key); });
 ipcMain.on("jishi:sync-reminders", (event, payload) => { if (isTrustedSender(event)) syncNativeReminders(BrowserWindow.fromWebContents(event.sender), payload); });
+ipcMain.on('jishi:clear-reminders', (event) => { if (isTrustedSender(event)) reminderStore?.clear(); });
 ipcMain.on('jishi:background-reminders', (event, enabled) => {
   if (!isTrustedSender(event) || typeof enabled !== 'boolean' || SMOKE_TEST) return;
   if (process.platform === 'win32' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath, args: ['--background-reminders'] });
-  if (!enabled) reminderStore?.sync('[]');
+  if (!enabled) reminderStore?.clear();
 });
 ipcMain.handle("jishi:notification-permission", (event) => isTrustedSender(event) ? "granted" : "denied");
 ipcMain.handle("jishi:update-download-state", (event) => isTrustedSender(event) ? updateDownloader?.getState() : { status: "failed", message: "更新页面来源不受信任" });

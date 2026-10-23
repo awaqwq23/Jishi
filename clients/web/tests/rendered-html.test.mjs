@@ -145,3 +145,11 @@ test("keeps the reported interaction regressions covered", async () => {
   assert.ok(harmonyPage.includes(`JishiHarmony/${JSON.parse(harmonyApp).app.versionName}`));
   assert.equal(JSON.parse(harmonyApp).app.bundleName, "cn.jishi.todo");
 });
+
+
+test('normal autosave never inserts a syncing banner or changes the saved label', async () => {
+  const app = await readFile(new URL('../app/TodoApp.tsx', import.meta.url), 'utf8');
+  assert.match(app, /!syncStatus.guest && \(syncStatus.offline \|\| syncStatus.issue\)/);
+  assert.doesNotMatch(app, /正在同步|等待同步/);
+  assert.match(app, /syncStatus.issue \? "同步暂停" : "已保存"/);
+});

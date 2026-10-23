@@ -44,5 +44,19 @@ test('disable cancels persisted reminders and malformed queues preserve valid da
   const store=createReminderStore({file:path.join(folder,'queue.json'),clock:()=>now,notify:item=>seen.push(item.key)});
   store.sync(JSON.stringify([{key:'soon',title:'test',body:'body',at:500}]));
   assert.throws(()=>store.sync('{}')); assert.throws(()=>store.sync('broken'));
-  store.sync('[]'); now=1000; await store.tick(); assert.equal(seen.length,0);
+  store.clear(); now=1000; await store.tick(); assert.equal(seen.length,0);
+});
+
+
+test('empty future refresh preserves a due reminder until delivery, explicit clear cancels it', async t => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'jishi-reminder-test-'));
+  t.after(() => cleanup(folder));
+  let now = 0; const seen = [];
+  const store = createReminderStore({ file: path.join(folder, 'queue.json'), clock: () => now, notify: item => seen.push(item.key) });
+  store.sync(JSON.stringify([{ key: 'last', title: 'task', body: 'due', at: 500 }]));
+  now = 501; store.sync('[]'); await store.tick(); await store.tick();
+  assert.deepEqual(seen, ['last']);
+  store.sync(JSON.stringify([{ key: 'cancel', title: 'task', body: 'due', at: 1000 }]));
+  now = 1001; store.clear(); await store.tick();
+  assert.deepEqual(seen, ['last']);
 });

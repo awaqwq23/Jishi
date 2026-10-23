@@ -13,7 +13,7 @@ function createReminderStore({ file, notify, clock = Date.now }) {
     const parsed = JSON.parse(payload);
     if (!Array.isArray(parsed) || parsed.length > 300) throw new Error('Invalid reminder queue');
     const now = clock(), seen = new Set();
-    const due = parsed.length ? reminders.filter(item => item.at <= now && now - item.at <= 86400000) : [];
+    const due = reminders.filter(item => item.at <= now && now - item.at <= 86400000);
     reminders = [...due, ...parsed.filter(item => item && typeof item.key === 'string' && item.key.length <= 200 && typeof item.title === 'string' && typeof item.body === 'string' && Number.isFinite(item.at) && item.at > now && item.at <= now + 366 * 86400000)].filter(item => !seen.has(item.key) && seen.add(item.key)).map(item => ({key:item.key,at:item.at,title:item.title.slice(0,120),body:item.body.slice(0,500)}));
     save();
   };
@@ -38,6 +38,7 @@ function createReminderStore({ file, notify, clock = Date.now }) {
       }
     } finally { delivering = false; }
   };
-  return { sync, restore, tick };
+  const clear = () => { reminders = []; save(); };
+  return { sync, clear, restore, tick };
 }
 module.exports = { createReminderStore };

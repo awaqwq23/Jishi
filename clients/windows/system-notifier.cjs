@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-function createSystemNotifier({ Notification, fallback, file, timeout = 5000, clock = Date.now }) {
+function createSystemNotifier({ Notification, fallback, file, timeout = 5000, clock = Date.now, desktopPopup = process.platform === 'win32' }) {
   const retained = new Set(), pending = new Map();
   let delivered = {};
   try { delivered = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* First launch. */ }
@@ -16,8 +16,10 @@ function createSystemNotifier({ Notification, fallback, file, timeout = 5000, cl
     if (Object.hasOwn(delivered, item.key)) return Promise.resolve(true);
     if (pending.has(item.key)) return pending.get(item.key);
     const operation = (async () => {
+      let desktopShown = false;
+      const showDesktop = async () => { await fallback(item, onClick); desktopShown = true; };
       if (!Notification.isSupported()) {
-        await fallback(item, onClick);
+        await showDesktop();
       } else {
         await new Promise((resolve, reject) => {
           const notification = new Notification({ title: item.title.slice(0, 120), body: item.body.slice(0, 500), silent: false, timeoutType: 'never' });
@@ -35,8 +37,10 @@ function createSystemNotifier({ Notification, fallback, file, timeout = 5000, cl
           notification.once('close', () => retained.delete(notification));
           notification.once('click', () => { retained.delete(notification); onClick(); });
           try { notification.show(); } catch (error) { finish(error); }
-        }).catch(() => fallback(item, onClick));
+        }).catch(() => showDesktop());
       }
+      // Keep a visible desktop reminder even when Windows suppresses toast banners.
+      if (desktopPopup && !desktopShown) await showDesktop();
       remember(item.key);
       return true;
     })().finally(() => pending.delete(item.key));

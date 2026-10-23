@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("JishiNative", {
   notificationPermissionState() {
     return ipcRenderer.invoke("jishi:notification-permission");
   },
+  clearReminders() { ipcRenderer.send('jishi:clear-reminders'); },
   syncReminders(payload) {
     ipcRenderer.send("jishi:sync-reminders", String(payload));
   },
