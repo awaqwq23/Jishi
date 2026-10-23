@@ -1,8 +1,8 @@
 {
   "windows": {
-    "version": "0.4.11",
-    "runId": 38416506363,
-    "commit": "5f257a491e403505068690707b1018bd5cf1cc40",
+    "version": "0.4.12",
+    "runId": 39890748596,
+    "commit": "486cbbe5b93d8bdb6d78b98344c14d5aaef4e69e",
     "artifact": "windows-candidate"
   },
   "android": {

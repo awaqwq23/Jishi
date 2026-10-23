@@ -1,27 +1,26 @@
 {
   "schemaVersion": 1,
   "required": true,
-  "releaseId": "web-5868378493343d61",
-  "webBuild": "5868378493343d612143103057ad5fa88a05b6f5d73a06f5b057181ce495f5b3",
-  "publishedAt": "2026-10-13T15:05:45.823Z",
+  "releaseId": "web-0423ab0c27442b7b",
+  "webBuild": "0423ab0c27442b7b6fe7d80d5ea8d138f59c098db7ab1c18c0d40fbd3dc0d7d9",
+  "publishedAt": "2026-10-23T02:52:20.837Z",
   "notes": [
-    "增加游客模式，记录仅存本机，注册后迁移全部记录",
-    "支持用户名注册，密码输入两次，旧邮箱账号仍可登录",
-    "优化断网注册、重试和数据保留保护"
+    "日记正常自动保存不再闪动同步提示",
+    "修复 Windows 到时提醒丢失，并显示独立桌面弹窗"
   ],
   "clients": {
     "windows": {
-      "version": "0.4.11",
-      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.11.exe",
-      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.11-a0.4.7/Jishi-Windows-Setup-0.4.11.exe",
-      "sha256": "09949A5923C33E978B3E8AE449028B98C5C18666DBA8AFAF67B7AC38B328F7EE",
-      "size": 112529087,
+      "version": "0.4.12",
+      "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Windows-Setup-0.4.12.exe",
+      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.12-a0.4.7/Jishi-Windows-Setup-0.4.12.exe",
+      "sha256": "DA8EFCD7E1ED577585DBACC8A4E2AB15AE44F8B6670E6B394FF5E5C4F13E1DF5",
+      "size": 112529364,
       "required": true
     },
     "android": {
       "version": "0.4.7",
       "downloadUrl": "https://awaqwq233.com/note/downloads/Jishi-Android-0.4.7.apk",
-      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.11-a0.4.7/Jishi-Android-0.4.7.apk",
+      "githubUrl": "https://github.com/awaqwq23/Jishi/releases/download/clients-v0.4.12-a0.4.7/Jishi-Android-0.4.7.apk",
       "sha256": "2C238D4F4D346F613D77E008A626EF46A98F5F70FEC6F3E84F089FFF2C0FA8E2",
       "size": 4069317,
       "required": true,
