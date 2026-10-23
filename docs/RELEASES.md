@@ -2,25 +2,25 @@
 
 仅维护当前正式版与上一代回退版的交付记录；长期规则见 [运维说明](OPERATIONS.md)，旧逐日记录中的必要信息已合并，完整代码历史由 Git 保留。
 
-## 2026-10-23 同步静默与 Windows 到时弹窗（待发布）
+## 2026-10-23 同步静默与 Windows 到时弹窗（已部署）
 
 - 正常日记自动保存不再插入、移除顶部“正在同步”条，固定位置显示“已保存”；离线与同步失败仍保留提示及重试入口。
 - Windows 到时队列刷新为空时保留已到期未发送的任务，关闭提醒或退出账号通过新增 clearReminders 明确清除；保留旧通知与队列 IPC。
 - Windows 除系统通知外显示独立桌面弹窗，避免仅凭 toast 回调就结束可见提醒。支持窗口关闭后托盘后台运行；完全退出进程或关机时不能弹窗，登录自启后可补发一天内的提醒。系统通知与桌面弹窗可能同时显示。
-- Windows 原生候选升至 0.4.12。Vite 从 8.2.1 更新至 8.3.5，审计从 1 项高危恢复为 0 漏洞。
+- Windows 正式版升至 0.4.12。Vite 从 8.2.1 更新至 8.3.5，审计从 1 项高危恢复为 0 漏洞。
 - 本机 Windows 14 项、Web 29 项测试、lint、类型检查与生产构建通过；新增空队列到时保留、弹窗失败重试和同步静默回归。首次沙箱测试因临时文件重命名受限失败，在正常环境复测通过。
 - Linux 独立暂存 Server 17 项、Web 29 项、Windows 14 项、全新 5 个迁移、完整 systemd 沙箱启动/JSON 401/账号 bootstrap/积分及实际 MemorySwapMax 与 OOMPolicy 核验通过。Windows/Linux Web 哈希一致（0423ab0c27442b7b6fe7d80d5ea8d138f59c098db7ab1c18c0d40fbd3dc0d7d9）。本机隔离安装和可见到时弹窗验收通过，最终提交的 GitHub 构建 39890748596 同样通过安装、主机解析与可见弹窗验收。正式候选取该 CI 产物，SHA-256 DA8EFCD7E1ED577585DBACC8A4E2AB15AE44F8B6670E6B394FF5E5C4F13E1DF5，更新契约通过。修复提交 bbc2c27、验收提交 486cbbe 已推送。
-- 最终发布提交 6aec1eb 已推送；公开 GitHub Release 两个资产的大小、SHA-256、下载地址校验通过（发布流水线 39892023362）。最终 /opt/jishi-staging 更新契约、零漏洞审计、秘密文件门禁、服务状态和 Nginx 配置预检全部通过。旧暂存保留为 /opt/jishi-staging-before-quiet-20261023。未停服务、未切换线上清单、未清理生产备份。部署拟建完整加密备份 /var/backups/jishi/previous-20261023-quiet-reminders/production.tar.aesgcm；按 AGENTS.md 展示准确命令、停机及回滚并取得最终确认后才能切换。
+- 最终发布提交 6aec1eb 已推送；公开 GitHub Release 两个资产的大小、SHA-256、下载地址校验通过（发布流水线 39892023362）。最终暂存更新契约、零漏洞审计、秘密文件门禁、服务状态和 Nginx 配置预检全部通过。用户明确回复“确认部署”后，已执行事前展示的 --apply 命令；完整加密回滚备份 /var/backups/jishi/previous-20261023-quiet-reminders/production.tar.aesgcm 已解密逐字节校验。API/Web/Nginx active，内部和主备站首页/健康响应 200；无效登录 JSON 401、恶意来源 JSON 403，独立已有账号在两站登录、bootstrap 和积分读取均为 200。Windows 0.4.3/0.4.4 实际登录与 bootstrap 共 4 个请求全部 200，Nginx 无新增异常。与备份只读比较，11 张业务表的 316 条旧记录、13 个媒体文件和秘密文件字节保留，数据库完整性、积分表、生产 Nginx 哈希、MemorySwapMax/OOMPolicy 及公网清单与源码哈希通过。启动时一次预期的健康连接重试已恢复，无回滚。
 
-## 当前正式版（2026-10-09）
+- 全部生产验收通过后已删除旧备份、两处暂存、源代码临时包和过期 Windows 0.4.10 下载。仅保留本次完整回滚备份及 Windows 0.4.12/0.4.11、Android 0.4.7；清理后服务和公网健康再次通过。当前用户电脑是否已更新到 0.4.12 以及其个人任务实际触发仍需设备端确认，隔离安装验收不替代该检查。
 
-Windows 0.4.7 / 留用 Android 0.4.7，Web `web-19b6c6044a0867a1`。公开 GitHub Release 为 `clients-v0.4.7-a0.4.7`，Windows SHA-256 `55CE15A282F7FE68F4ED0B44D75C209F0EE1032B482E2AE0677B5468281381DD`，Android SHA-256 `2C238D4F4D346F613D77E008A626EF46A98F5F70FEC6F3E84F089FFF2C0FA8E2`。正式清单启用 `required=true`。
+## 当前正式版（2026-10-23）
 
-当前服务器服务均 active。公网与主备站、登录错误契约、原有数据和新数据落盘、旧 Windows 客户端请求以及更新清单已通过验收。旧备份与暂存清理完成。
+Windows 0.4.12 / 留用 Android 0.4.7，Web `web-0423ab0c27442b7b`。公开 GitHub Release 为 `clients-v0.4.12-a0.4.7`；Windows SHA-256 `DA8EFCD7E1ED577585DBACC8A4E2AB15AE44F8B6670E6B394FF5E5C4F13E1DF5`。正式清单启用 `required=true`。服务器服务与主备站、真实账号、旧客户端、旧数据和更新清单验收通过。
 
 ## 上一代回退版
 
-Windows 0.4.6 / Android 0.4.7；对应原 Web `web-1eb33d5ff18eb60d`。完整生产回滚备份仅保留 `/var/backups/jishi/previous-20261009-points-shop/production.tar.aesgcm`，同时保留恢复密钥及备份校验、验收记录。
+Windows 0.4.11 / Android 0.4.7；对应原 Web `web-5868378493343d61`。本次部署前完整生产回滚备份为 `/var/backups/jishi/previous-20261023-quiet-reminders/production.tar.aesgcm`，同时保留恢复密钥及备份校验和验收记录。
 
 ## 实现与发布记录
 

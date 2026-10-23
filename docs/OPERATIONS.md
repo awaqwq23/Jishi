@@ -59,6 +59,8 @@ Wrangler dev 的 ProxyWorker 会重写与外部 Host 匹配的 URL 类请求头�
 
 ## 部署状态与清理
 
+2026-10-23 生产已部署 Web `web-0423ab0c27442b7b` / Windows 0.4.12，Android 保留 0.4.7。当前回滚备份为 `/var/backups/jishi/previous-20261023-quiet-reminders/production.tar.aesgcm`；该目录中的 `verification-complete`、`old-data-verification.json`、`legacy-acceptance.json` 和 `real-account-acceptance.json` 保存本次真实验收。Windows 到时同时使用系统通知和独立桌面弹窗；窗口关闭后可由托盘后台提醒，完全退出进程或关机时无法弹窗，不能将后台队列解释为系统脱离进程调度。
+
 部署脚本采用短暂停服的一致性备份，备份解密比对成功后才更新代码。停服阶段旧 Wrangler 进程可能留下 143 退出状态；不能据此判断新 API 启动失败，应核对新一轮启动日志和实际健康响应，不在部署中途自行重复启动 Wrangler。
 
 2026-10-13 生产已发布 web-b426708b717067dc / Windows 0.4.10，Android 正式保留 0.4.7。验收后只保留 /var/backups/jishi/previous-20261013-offline-sync 完整加密回滚备份。备份中的 verification-complete 和 old-data-verification.json 记录服务、主备站、真实账号、旧客户端与旧数据检查；其范围是服务器，明确标记鸿蒙真机尚未验收。
