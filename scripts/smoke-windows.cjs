@@ -27,7 +27,7 @@ async function main() {
     const notificationTimeout = setTimeout(() => notificationChild.kill(), 45000);
     const notificationCode = await new Promise((resolve, reject) => { notificationChild.on('error', reject); notificationChild.on('close', resolve); });
     clearTimeout(notificationTimeout);
-    if (notificationCode !== 0 || !receipt.includes('JISHI_SCHEDULED_NOTIFICATION=accepted')) throw new Error('Installed Windows scheduled notification smoke failed');
+    if (notificationCode !== 0 || !receipt.includes('JISHI_SCHEDULED_NOTIFICATION=accepted') || !receipt.includes('JISHI_DESKTOP_REMINDER=visible')) throw new Error('Installed Windows scheduled notification smoke failed');
     console.log('installed_windows_scheduled_notification=pass');
   } finally {
     await new Promise(resolve=>server.close(resolve));

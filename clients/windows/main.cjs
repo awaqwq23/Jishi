@@ -156,6 +156,9 @@ app.whenReady().then(async () => {
       queue.sync(JSON.stringify([{ key: `smoke:${Date.now()}`, title: '拾光记事提醒测试', body: '安装包的系统提醒已到时。', at: Date.now() + 1500 }]));
       await new Promise(resolve => setTimeout(resolve, 1700));
       await queue.tick();
+      if (process.platform === 'win32' && ![...desktopNotifications].some(popup => popup.isVisible())) throw new Error('Desktop reminder is not visible');
+      console.log('JISHI_DESKTOP_REMINDER=visible');
+      await new Promise(resolve => setTimeout(resolve, 1500));
       console.log('JISHI_SCHEDULED_NOTIFICATION=accepted');
       app.quit();
     } catch (error) { console.error('JISHI_SCHEDULED_NOTIFICATION=failed'); app.exit(1); }
